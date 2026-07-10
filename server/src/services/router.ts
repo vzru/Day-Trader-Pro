@@ -1,22 +1,14 @@
 import { config } from '../config';
 import { AlpacaSource } from '../datasources/alpaca';
 import type { DataSource, NewsSource } from '../datasources/DataSource';
+import { FinnhubSource } from '../datasources/finnhub';
 import { SimSource } from '../datasources/sim';
 import { YahooSource } from '../datasources/yahoo';
+import { isCaSymbol } from '../util/symbols';
 import type { FeedId, FeedState, FeedStatus } from '../types';
 import { log } from '../util/log';
 
-/** True for symbols served by the Canadian/reference feed (Yahoo). */
-export function isCaSymbol(symbol: string): boolean {
-  return /\.(TO|V)$/i.test(symbol) || symbol.startsWith('^') || symbol.endsWith('=X');
-}
-
-export function exchangeOf(symbol: string): string {
-  if (/\.TO$/i.test(symbol)) return 'TSX';
-  if (/\.V$/i.test(symbol)) return 'TSXV';
-  if (symbol.startsWith('^') || symbol.endsWith('=X')) return 'IDX';
-  return 'US';
-}
+export { exchangeOf, isCaSymbol } from '../util/symbols';
 
 /**
  * Owns the concrete provider instances and routes each symbol to one.
@@ -45,7 +37,12 @@ export class Router {
     // Yahoo serves market cap / float / short interest for US symbols too;
     // Alpaca's free data API has no fundamentals.
     this.fundamentals = this.ca instanceof YahooSource ? this.ca : simCa;
-    this.news = config.newsFeed === 'sim' ? simUs : null;
+    this.news =
+      config.newsFeed === 'finnhub' && config.finnhubKey
+        ? new FinnhubSource(config.finnhubKey)
+        : config.newsFeed === 'sim'
+          ? simUs
+          : null;
 
     this.statuses.set('us', {
       id: 'us',
