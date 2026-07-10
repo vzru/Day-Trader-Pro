@@ -10,6 +10,8 @@ import { composite, scannerFactors } from './score';
 import { isCaSymbol, Router } from './router';
 
 const SCAN_INTERVAL_MS = 60_000;
+/** Re-verify market caps periodically; caps drift and unknowns get filled. */
+const REVERIFY_INTERVAL_MS = 12 * 3_600_000;
 const CAP_MIN = 2e9;
 const CAP_MAX = 10e9;
 const MIN_PRICE = 5;
@@ -46,6 +48,8 @@ export class Scanner {
     await this.verifyUniverse();
     await this.scanOnce();
     this.timer = setInterval(() => void this.scanOnce(), SCAN_INTERVAL_MS);
+    const reverify = setInterval(() => void this.verifyUniverse(), REVERIFY_INTERVAL_MS);
+    reverify.unref?.();
     log('scanner', `running: ${this.eligible.length}/${this.universe.length} symbols eligible, scanning every ${SCAN_INTERVAL_MS / 1000}s`);
   }
 
