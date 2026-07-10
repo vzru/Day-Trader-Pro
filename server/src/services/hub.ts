@@ -1,22 +1,41 @@
 import { config } from '../config';
 import type { DataSource } from '../datasources/DataSource';
 import type {
-  Bar, Fundamentals, NewsItem, Quote, ServerMessage, TickerDetail, WatchRow,
+  Bar, CalendarEvent, Fundamentals, NewsItem, Quote, ServerMessage, TickerDetail, WatchRow,
 } from '../types';
 import { error, log, warn } from '../util/log';
 import { getSession, sessionElapsedFraction } from '../util/session';
 import { gapPct, rangePct, relativeVolume, rsi14, spreadPct, vwap } from './indicators';
 import { computeFactors, setupScore } from './score';
-import { exchangeOf, Router } from './router';
+import { exchangeOf, isCaSymbol, Router } from './router';
 import type { WatchlistStore } from './watchlist';
 
-export const CONTEXT_SYMBOLS = ['SPY', 'QQQ', 'XIC.TO', '^VIX', 'CAD=X'];
+/** Chart ranges the UI can request. 1D is intraday (1-min); the rest are daily. */
+export type ChartRange = '1D' | '1M' | '6M' | '1Y' | '5Y';
+const RANGE_LOOKBACK: Record<Exclude<ChartRange, '1D'>, number> = {
+  '1M': 22, '6M': 126, '1Y': 252, '5Y': 1260,
+};
+
+/** Evenly pick at most `n` values from a series (keeps first + last). */
+function downsample(values: number[], n: number): number[] {
+  if (values.length <= n) return values;
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(values[Math.round((i / (n - 1)) * (values.length - 1))]);
+  }
+  return out;
+}
+
+// Real major-market indices (all route to the Yahoo/reference feed via isCaSymbol).
+export const CONTEXT_SYMBOLS = ['^GSPC', '^IXIC', '^DJI', '^GSPTSE', '^VIX', 'CAD=X'];
 
 const TICK_THROTTLE_MS = 400;
 const DETAIL_INTERVAL_MS = 3_000;
 const STATUS_INTERVAL_MS = 15_000;
 const NEWS_INTERVAL_MS = 120_000;
 const NEWS_LOOKBACK_MS = 72 * 3_600_000;
+const EARNINGS_INTERVAL_MS = 6 * 3_600_000; // earnings dates move slowly
+const EARNINGS_LOOKAHEAD_MS = 60 * 86_400_000;
 
 /**
  * Central state hub: tracks watchlist + context + selected symbols, pumps
@@ -30,6 +49,7 @@ export class Hub {
   private avgVol = new Map<string, number>();
   private primed = new Set<string>();
   private newsItems: NewsItem[] = [];
+  private earnings: CalendarEvent[] = [];
   private latestNewsTs = new Map<string, number>();
   private lastTickSent = new Map<string, number>();
   private unsubs: (() => void)[] = [];
@@ -57,6 +77,13 @@ export class Hub {
       void this.refreshNews();
       this.timers.push(setInterval(() => void this.refreshNews(), NEWS_INTERVAL_MS));
     }
+    if (this.router.earnings) {
+      void this.refreshEarnings();
+      this.timers.push(setInterval(() => void this.refreshEarnings(), EARNINGS_INTERVAL_MS));
+    }
+    // Seed intraday history for the context-strip indices so each gets a
+    // daily-movement sparkline (fire-and-forget; the poll keeps them current).
+    void this.seedContextBars();
     log('hub', `started; selected=${this.selected}, tracking ${this.trackedSymbols().length} symbols`);
   }
 
@@ -140,6 +167,27 @@ export class Hub {
     } catch (e) {
       warn('hub', `bars seed failed for ${symbol}:`, e instanceof Error ? e.message : e);
     }
+  }
+
+  private async seedContextBars(): Promise<void> {
+    for (const s of CONTEXT_SYMBOLS) {
+      try {
+        await this.ensureBars(s);
+      } catch {
+        /* a missing index sparkline is not worth surfacing */
+      }
+    }
+  }
+
+  /** Downsampled intraday close series per context index, for the header sparklines. */
+  contextSeries(): { symbol: string; points: number[] }[] {
+    const out: { symbol: string; points: number[] }[] = [];
+    for (const s of CONTEXT_SYMBOLS) {
+      const bars = this.bars.get(s) ?? [];
+      if (bars.length < 2) continue;
+      out.push({ symbol: s, points: downsample(bars.map((b) => b.c), 32) });
+    }
+    return out;
   }
 
   // ---- provider event handlers ----
@@ -235,6 +283,19 @@ export class Hub {
     });
   }
 
+  /** Bars for a chart range: 1D = live intraday buffer (or fetched), else daily history. */
+  async rangeBars(symbolRaw: string, range: ChartRange): Promise<Bar[]> {
+    const symbol = symbolRaw.trim().toUpperCase();
+    if (!symbol) return [];
+    const provider = this.router.providerFor(symbol);
+    if (range === '1D') {
+      const live = this.bars.get(symbol) ?? [];
+      if (live.length > 5) return live;
+      return provider.getBars(symbol, '1Min', 390);
+    }
+    return provider.getBars(symbol, '1Day', RANGE_LOOKBACK[range]);
+  }
+
   async addSymbol(symbol: string): Promise<{ ok: boolean; error?: string }> {
     const res = this.watchlist.add(symbol);
     if (res.ok) {
@@ -275,6 +336,24 @@ export class Hub {
 
   getNews(): NewsItem[] {
     return this.newsItems;
+  }
+
+  // ---- earnings calendar ----
+
+  private async refreshEarnings(): Promise<void> {
+    if (!this.router.earnings) return;
+    try {
+      const symbols = [...new Set([...this.watchlist.list(), ...(this.selected ? [this.selected] : [])])]
+        .filter((s) => !isCaSymbol(s));
+      const now = Date.now();
+      this.earnings = await this.router.earnings.getEarnings(symbols, now, now + EARNINGS_LOOKAHEAD_MS);
+    } catch (e) {
+      warn('hub', 'earnings refresh failed (continuing without):', e instanceof Error ? e.message : e);
+    }
+  }
+
+  getEarnings(): CalendarEvent[] {
+    return this.earnings;
   }
 
   // ---- snapshots for new websocket clients ----

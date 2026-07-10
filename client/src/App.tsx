@@ -5,13 +5,13 @@ import ContextStrip from './components/ContextStrip';
 import FooterBar from './components/FooterBar';
 import Header from './components/Header';
 import NewsTape from './components/NewsTape';
-import PositionCalc from './components/PositionCalc';
 import Scanner from './components/Scanner';
 import TickerDetail from './components/TickerDetail';
+import TopCompanies from './components/TopCompanies';
 import Watchlist from './components/Watchlist';
 import type {
   Bar, CalendarEvent, FeedStatus, NewsItem, Quote, ScannerState, ServerMessage,
-  SessionInfo, TickerDetail as Detail, WatchRow,
+  SessionInfo, TickerDetail as Detail, TopRow, WatchRow,
 } from './types';
 import { connectWS, type WSHandle, type WSStatus } from './ws';
 
@@ -25,6 +25,7 @@ export default function App() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [ticks, setTicks] = useState<TickMap>({});
   const [watchRows, setWatchRows] = useState<WatchRow[]>([]);
+  const [topRows, setTopRows] = useState<TopRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [barsSymbol, setBarsSymbol] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export default function App() {
   const [newsEnabled, setNewsEnabled] = useState(false);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [calendar, setCalendar] = useState<CalendarEvent[]>([]);
+  const [earningsConfigured, setEarningsConfigured] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const wsRef = useRef<WSHandle | null>(null);
@@ -75,6 +77,9 @@ export default function App() {
       case 'watchlist':
         setWatchRows(msg.rows);
         break;
+      case 'top':
+        setTopRows(msg.rows);
+        break;
       case 'scanner':
         setScanner({ results: msg.results, universeSize: msg.universeSize, eligible: msg.eligible, updatedAt: msg.updatedAt });
         break;
@@ -95,7 +100,11 @@ export default function App() {
       setNewsEnabled(r.enabled);
       if (r.items.length) setNews(r.items);
     }).catch(() => setNewsEnabled(false));
-    api.getCalendar().then((r) => setCalendar(r.events)).catch(() => setCalendar([]));
+    api.getCalendar().then((r) => {
+      setCalendar(r.events);
+      setEarningsConfigured(r.earningsConfigured);
+    }).catch(() => setCalendar([]));
+    api.getTop().then((r) => setTopRows(r.rows)).catch(() => {});
     return () => ws.close();
   }, [handleMessage]);
 
@@ -141,6 +150,14 @@ export default function App() {
 
       <div className="layout">
         <aside className="rail-left">
+          <TopCompanies
+            rows={topRows}
+            ticks={ticks}
+            selected={selected}
+            watchSymbols={watchSymbols}
+            onSelect={select}
+            onAdd={addSymbol}
+          />
           <Watchlist
             rows={watchRows}
             ticks={ticks}
@@ -168,8 +185,7 @@ export default function App() {
 
         <aside className="rail-right">
           {newsEnabled && <NewsTape items={news} />}
-          <PositionCalc symbol={selected} livePrice={selectedTick?.quote.price ?? null} />
-          <CalendarPanel events={calendar} />
+          <CalendarPanel events={calendar} earningsConfigured={earningsConfigured} />
         </aside>
       </div>
 

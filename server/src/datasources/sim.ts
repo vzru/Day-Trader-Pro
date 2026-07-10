@@ -209,6 +209,8 @@ export class SimSource implements DataSource, NewsSource {
         floatShares,
         shortPctFloat: round(1 + rand() * 29),
         avgVolume30d: Math.round((0.8 + rand() * 15) * 1e6),
+        peRatio: round(8 + rand() * 42),
+        dividendYield: rand() < 0.55 ? round(rand() * 3.5) : null,
       };
     });
   }

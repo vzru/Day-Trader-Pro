@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { AlpacaSource } from '../datasources/alpaca';
-import type { DataSource, NewsSource } from '../datasources/DataSource';
+import type { DataSource, EarningsSource, NewsSource } from '../datasources/DataSource';
 import { FinnhubSource } from '../datasources/finnhub';
 import { SimSource } from '../datasources/sim';
 import { YahooSource } from '../datasources/yahoo';
@@ -21,6 +21,8 @@ export class Router {
   /** Fundamentals (market cap / float / short interest) for ALL symbols. */
   readonly fundamentals: DataSource;
   readonly news: NewsSource | null;
+  /** Earnings calendar (Finnhub, when a key is configured). */
+  readonly earnings: EarningsSource | null;
 
   private statuses = new Map<FeedId, FeedStatus>();
   onStatusChange: (() => void) | null = null;
@@ -37,12 +39,15 @@ export class Router {
     // Yahoo serves market cap / float / short interest for US symbols too;
     // Alpaca's free data API has no fundamentals.
     this.fundamentals = this.ca instanceof YahooSource ? this.ca : simCa;
+    // One Finnhub instance backs both news and the earnings calendar.
+    const finnhub = config.finnhubKey ? new FinnhubSource(config.finnhubKey) : null;
     this.news =
-      config.newsFeed === 'finnhub' && config.finnhubKey
-        ? new FinnhubSource(config.finnhubKey)
+      config.newsFeed === 'finnhub' && finnhub
+        ? finnhub
         : config.newsFeed === 'sim'
           ? simUs
           : null;
+    this.earnings = finnhub;
 
     this.statuses.set('us', {
       id: 'us',

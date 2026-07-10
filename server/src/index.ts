@@ -9,6 +9,7 @@ import { buildApi } from './routes/api';
 import { Hub } from './services/hub';
 import { Router } from './services/router';
 import { Scanner } from './services/scanner';
+import { TopCompanies } from './services/topCompanies';
 import { WatchlistStore } from './services/watchlist';
 import { error, log } from './util/log';
 
@@ -21,10 +22,11 @@ async function main(): Promise<void> {
   const watchlist = new WatchlistStore();
   const hub = new Hub(router, watchlist);
   const scanner = new Scanner(router);
+  const top = new TopCompanies(router);
 
   const app = express();
   app.use(express.json());
-  app.use('/api', buildApi(hub, scanner, router));
+  app.use('/api', buildApi(hub, scanner, router, top));
 
   // Serve the built client if it exists (production convenience; in dev the
   // Vite server at :5173 proxies /api and /ws here instead).
@@ -44,13 +46,14 @@ async function main(): Promise<void> {
   const server = http.createServer(app);
   const push = new Push(
     server,
-    () => hub.snapshotMessages(),
+    () => [...hub.snapshotMessages(), top.message()],
     (msg) => {
       if (msg.type === 'select') void hub.select(msg.symbol);
     },
   );
   hub.broadcast = (msg) => push.broadcast(msg);
   scanner.broadcast = (msg) => push.broadcast(msg);
+  top.broadcast = (msg) => push.broadcast(msg);
 
   // Listen first: data priming can take a while when providers rate-limit,
   // and the UI should be reachable (with placeholders) the whole time.
@@ -61,6 +64,7 @@ async function main(): Promise<void> {
 
   await hub.start();
   void scanner.start();
+  void top.start();
 }
 
 main().catch((e) => {

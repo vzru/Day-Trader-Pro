@@ -4,7 +4,10 @@ import { config } from '../config';
 import { log, warn } from '../util/log';
 
 const FILE = path.join(config.dataDir, 'watchlist.json');
-const DEFAULTS = ['AAPL', 'AMD', 'PLTR', 'RIOT', 'SHOP.TO', 'BTE.TO'];
+
+// The personal watchlist is now purely the user's own picks — the ranked
+// mega-caps live in the separate market-cap-ranked Top Companies list.
+const DEFAULTS = ['AMD', 'RIOT', 'SHOP.TO', 'SPCX'];
 const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-^=]{0,11}$/;
 const MAX = 50;
 

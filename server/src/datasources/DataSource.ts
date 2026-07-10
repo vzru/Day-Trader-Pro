@@ -1,4 +1,4 @@
-import type { Bar, FeedState, Fundamentals, NewsItem, Quote } from '../types';
+import type { Bar, CalendarEvent, FeedState, Fundamentals, NewsItem, Quote } from '../types';
 
 export interface StreamHandlers {
   onQuote?: (q: Quote) => void;
@@ -42,4 +42,11 @@ export interface DataSource {
 export interface NewsSource {
   readonly id: string;
   getNews(symbols: string[], sinceMs: number): Promise<NewsItem[]>;
+}
+
+/** Optional capability: providers that can serve an earnings calendar. */
+export interface EarningsSource {
+  readonly id: string;
+  /** Upcoming earnings dates for the given symbols, as calendar events. */
+  getEarnings(symbols: string[], fromMs: number, toMs: number): Promise<CalendarEvent[]>;
 }

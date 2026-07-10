@@ -45,6 +45,8 @@ export interface Fundamentals {
   floatShares?: number | null;
   shortPctFloat?: number | null;
   avgVolume30d?: number | null;
+  peRatio?: number | null;
+  dividendYield?: number | null; // percent
 }
 
 export interface NewsItem {
@@ -95,6 +97,17 @@ export interface WatchRow {
   delayed: boolean;
 }
 
+export interface TopRow {
+  rank: number;
+  symbol: string;
+  name?: string;
+  marketCap: number | null;
+  price: number | null;
+  changePct: number | null;
+  source: string;
+  delayed: boolean;
+}
+
 export interface ScannerResult {
   symbol: string;
   name: string;
@@ -115,6 +128,15 @@ export interface SessionInfo {
   etTime: string;
 }
 
+export type CalendarCategory =
+  | 'earnings'
+  | 'rates'
+  | 'inflation'
+  | 'jobs'
+  | 'growth'
+  | 'energy'
+  | 'other';
+
 export interface CalendarEvent {
   id: string;
   date: string;
@@ -122,7 +144,11 @@ export interface CalendarEvent {
   title: string;
   country: string;
   importance: 'high' | 'medium' | 'low';
+  category?: CalendarCategory;
+  symbol?: string;
 }
+
+export type ChartRange = '1D' | '1M' | '6M' | '1Y' | '5Y';
 
 export interface ScannerState {
   results: ScannerResult[];
@@ -139,6 +165,7 @@ export type ServerMessage =
   | { type: 'bar'; symbol: string; bar: Bar }
   | { type: 'detail'; detail: TickerDetail }
   | { type: 'watchlist'; rows: WatchRow[] }
+  | { type: 'top'; rows: TopRow[] }
   | ({ type: 'scanner' } & ScannerState)
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };

@@ -49,6 +49,8 @@ export interface Fundamentals {
   floatShares?: number | null;
   shortPctFloat?: number | null; // percent, e.g. 12.4
   avgVolume30d?: number | null;
+  peRatio?: number | null; // trailing P/E
+  dividendYield?: number | null; // percent, e.g. 0.65
 }
 
 export interface NewsItem {
@@ -103,6 +105,18 @@ export interface WatchRow {
   delayed: boolean;
 }
 
+/** One row of the market-cap-ranked "Top US companies" list. */
+export interface TopRow {
+  rank: number;
+  symbol: string;
+  name?: string;
+  marketCap: number | null;
+  price: number | null;
+  changePct: number | null;
+  source: string;
+  delayed: boolean;
+}
+
 export interface ScannerResult {
   symbol: string;
   name: string;
@@ -124,6 +138,15 @@ export interface SessionInfo {
   etTime: string;
 }
 
+export type CalendarCategory =
+  | 'earnings'
+  | 'rates'
+  | 'inflation'
+  | 'jobs'
+  | 'growth'
+  | 'energy'
+  | 'other';
+
 export interface CalendarEvent {
   id: string;
   date: string; // YYYY-MM-DD
@@ -131,6 +154,10 @@ export interface CalendarEvent {
   title: string;
   country: string; // "US" | "CA" | ...
   importance: 'high' | 'medium' | 'low';
+  /** Grouping bucket for the calendar UI. Defaults to 'other' when absent. */
+  category?: CalendarCategory;
+  /** Ticker an earnings event applies to, e.g. "NVDA". */
+  symbol?: string;
 }
 
 // ---- websocket protocol (server -> client) ----
@@ -143,6 +170,7 @@ export type ServerMessage =
   | { type: 'bar'; symbol: string; bar: Bar }
   | { type: 'detail'; detail: TickerDetail }
   | { type: 'watchlist'; rows: WatchRow[] }
+  | { type: 'top'; rows: TopRow[] }
   | { type: 'scanner'; results: ScannerResult[]; universeSize: number; eligible: number; updatedAt: number }
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };

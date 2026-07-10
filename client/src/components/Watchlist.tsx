@@ -60,9 +60,11 @@ export default function Watchlist({
               tabIndex={0}
               aria-pressed={selected === row.symbol}
             >
-              <div className="watch-main">
+              <div className="watch-top">
                 <span className="watch-symbol">{row.symbol}</span>
                 <span className="watch-exch">{row.exchange}</span>
+                <span className="watch-price">{fmtPrice(price, row.symbol)}</span>
+                <span className={`watch-chg ${chgClass(chg)}`}>{fmtPct(chg)}</span>
                 <button
                   className="watch-remove"
                   aria-label={`Remove ${row.symbol}`}
@@ -74,10 +76,6 @@ export default function Watchlist({
                 >
                   ×
                 </button>
-              </div>
-              <div className="watch-nums">
-                <span className="watch-price">{fmtPrice(price, row.symbol)}</span>
-                <span className={`watch-chg ${chgClass(chg)}`}>{fmtPct(chg)}</span>
               </div>
               <div className="relvol" title={relVol == null ? 'Relative volume unavailable' : `Relative volume ${relVol.toFixed(2)}x (vs 30-day pace)`}>
                 <div className="relvol-track">

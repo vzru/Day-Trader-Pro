@@ -17,6 +17,12 @@ export function fmtCap(n: number | null | undefined): string {
   return `$${(n / 1e6).toFixed(0)}M`;
 }
 
+/** Plain ratio like P/E — one decimal, em-dash when absent or non-positive. */
+export function fmtRatio(n: number | null | undefined): string {
+  if (n == null || !isFinite(n) || n <= 0) return '—';
+  return n.toFixed(1);
+}
+
 export function fmtCompact(n: number | null | undefined): string {
   if (n == null || !isFinite(n)) return '—';
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
@@ -34,6 +40,40 @@ const ET_TIME = new Intl.DateTimeFormat('en-US', {
 
 export function fmtEtTime(ts: number): string {
   return `${ET_TIME.format(new Date(ts))} ET`;
+}
+
+const ET_DATE = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', month: 'short', day: 'numeric',
+});
+const ET_MONTH_YEAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', month: 'short', year: '2-digit',
+});
+
+/** Date label for daily-bar charts. `longRange` uses month+year (for 1Y/5Y). */
+export function fmtDate(ts: number, longRange = false): string {
+  return (longRange ? ET_MONTH_YEAR : ET_DATE).format(new Date(ts));
+}
+
+/** Common brand name people know, given a ticker + legal name. Null if none distinct. */
+const BRAND_OVERRIDES: Record<string, string> = {
+  AAPL: 'Apple', MSFT: 'Microsoft', GOOGL: 'Google', GOOG: 'Google', AMZN: 'Amazon',
+  META: 'Meta', NVDA: 'Nvidia', TSLA: 'Tesla', AVGO: 'Broadcom', LLY: 'Eli Lilly',
+  JPM: 'JPMorgan', AMD: 'AMD', RIOT: 'Riot Platforms', SHOP: 'Shopify', BRK: 'Berkshire',
+};
+const CORP_SUFFIX =
+  /\s+(?:incorporated|inc|corporation|corp|company|co|holdings?|group|plc|llc|ltd|limited|class\s+[abc]|&\s*co|n\.?v|s\.?a|ag|se)\.?,?$/i;
+
+export function brandName(symbol: string | null | undefined, legalName: string | null | undefined): string | null {
+  const key = symbol?.toUpperCase().split('.')[0] ?? '';
+  if (BRAND_OVERRIDES[key]) return BRAND_OVERRIDES[key];
+  if (!legalName) return null;
+  let s = legalName.replace(/[,.]+$/, '').trim();
+  let prev = '';
+  while (s !== prev && s.length) {
+    prev = s;
+    s = s.replace(CORP_SUFFIX, '').replace(/[,.\s]+$/, '').trim();
+  }
+  return s || null;
 }
 
 export function fmtAge(ts: number): string {

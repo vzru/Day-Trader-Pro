@@ -34,6 +34,10 @@ const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const FETCH_OPTS = { fetchOptions: { headers: { 'User-Agent': BROWSER_UA } } } as const;
 
+/** Yahoo spells class shares with a dash where Alpaca/most sources use a dot. */
+const YAHOO_ALIAS: Record<string, string> = { 'BRK.B': 'BRK-B', 'BRK.A': 'BRK-A', 'BF.B': 'BF-B' };
+const toYahoo = (s: string): string => YAHOO_ALIAS[s] ?? s;
+
 interface QuoteCacheEntry {
   quote: Quote;
   fetchedAt: number;
@@ -94,16 +98,26 @@ export class YahooSource implements DataSource {
     const out: Quote[] = [];
     for (let i = 0; i < symbols.length; i += BATCH) {
       const batch = symbols.slice(i, i + BATCH);
+      // Query Yahoo with its ticker spelling, but key everything back under the
+      // caller's original symbol (e.g. BRK.B, not BRK-B).
+      const rev = new Map<string, string>();
+      const yahooBatch = batch.map((s) => {
+        const y = toYahoo(s);
+        rev.set(y, s);
+        return y;
+      });
       await this.gate();
-      const raw = (await yahooFinance.quote(batch, {}, FETCH_OPTS)) as unknown as Record<string, unknown>[];
+      const raw = (await yahooFinance.quote(yahooBatch, {}, FETCH_OPTS)) as unknown as Record<string, unknown>[];
       const arr = Array.isArray(raw) ? raw : [raw];
       for (const r of arr) {
         const q = this.mapQuote(r);
         if (!q.symbol) continue;
-        if (typeof r.quoteType === 'string') this.quoteType.set(q.symbol, r.quoteType);
-        this.quoteCache.set(q.symbol, { quote: q, fetchedAt: Date.now() });
+        const orig = rev.get(q.symbol) ?? q.symbol;
+        q.symbol = orig;
+        if (typeof r.quoteType === 'string') this.quoteType.set(orig, r.quoteType);
+        this.quoteCache.set(orig, { quote: q, fetchedAt: Date.now() });
         // stash quote-level fundamentals so scanner cap checks are batchable
-        this.stashQuoteFundamentals(r, q.symbol);
+        this.stashQuoteFundamentals(r, orig);
         out.push(q);
       }
     }
@@ -116,6 +130,8 @@ export class YahooSource implements DataSource {
       return typeof v === 'number' && isFinite(v) ? v : null;
     };
     const existing = this.fundCache.get(symbol)?.fund;
+    // Yahoo gives the trailing dividend yield as a fraction (0.0065) — store as percent.
+    const divFrac = num('trailingAnnualDividendYield');
     this.fundCache.set(symbol, {
       fetchedAt: this.fundCache.get(symbol)?.fetchedAt ?? 0,
       fund: {
@@ -127,6 +143,8 @@ export class YahooSource implements DataSource {
         avgVolume30d: num('averageDailyVolume3Month') ?? existing?.avgVolume30d ?? null,
         floatShares: existing?.floatShares ?? null,
         shortPctFloat: existing?.shortPctFloat ?? null,
+        peRatio: num('trailingPE') ?? existing?.peRatio ?? null,
+        dividendYield: divFrac != null ? divFrac * 100 : existing?.dividendYield ?? null,
       },
     });
   }

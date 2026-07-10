@@ -2,14 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Router as ExpressRouter } from 'express';
 import { config } from '../config';
-import type { Hub } from '../services/hub';
+import type { ChartRange, Hub } from '../services/hub';
 import type { Scanner } from '../services/scanner';
 import type { Router } from '../services/router';
+import type { TopCompanies } from '../services/topCompanies';
 import type { CalendarEvent } from '../types';
 import { warn } from '../util/log';
 import { getSession } from '../util/session';
 
-export function buildApi(hub: Hub, scanner: Scanner, router: Router): ExpressRouter {
+const CHART_RANGES: ChartRange[] = ['1D', '1M', '6M', '1Y', '5Y'];
+
+export function buildApi(hub: Hub, scanner: Scanner, router: Router, top: TopCompanies): ExpressRouter {
   const api = ExpressRouter();
 
   api.get('/health', (_req, res) => {
@@ -42,19 +45,43 @@ export function buildApi(hub: Hub, scanner: Scanner, router: Router): ExpressRou
     res.json(scanner.message());
   });
 
+  api.get('/top', (_req, res) => {
+    res.json(top.message());
+  });
+
+  api.get('/context', (_req, res) => {
+    res.json({ series: hub.contextSeries() });
+  });
+
+  api.get('/bars/:symbol', async (req, res) => {
+    const range = String(req.query.range ?? '1D').toUpperCase() as ChartRange;
+    if (!CHART_RANGES.includes(range)) return res.status(400).json({ error: 'Invalid range' });
+    try {
+      const bars = await hub.rangeBars(req.params.symbol, range);
+      res.json({ symbol: req.params.symbol.toUpperCase(), range, bars });
+    } catch (e) {
+      warn('api', 'bars fetch failed:', e instanceof Error ? e.message : e);
+      res.status(502).json({ error: 'Could not fetch bars' });
+    }
+  });
+
   api.get('/news', (_req, res) => {
     res.json({ enabled: config.newsFeed !== 'off', items: hub.getNews() });
   });
 
   api.get('/calendar', (_req, res) => {
     const file = path.join(config.dataDir, 'calendar.json');
+    let macro: CalendarEvent[] = [];
     try {
-      const events = JSON.parse(fs.readFileSync(file, 'utf8')) as CalendarEvent[];
-      res.json({ events });
+      macro = JSON.parse(fs.readFileSync(file, 'utf8')) as CalendarEvent[];
     } catch (e) {
       warn('api', 'could not read calendar.json:', e);
-      res.json({ events: [] });
     }
+    // Macro events from the local file + live per-stock earnings (Finnhub).
+    res.json({
+      events: [...macro, ...hub.getEarnings()],
+      earningsConfigured: router.earnings != null,
+    });
   });
 
   return api;

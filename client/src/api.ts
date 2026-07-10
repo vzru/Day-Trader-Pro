@@ -1,4 +1,4 @@
-import type { CalendarEvent, NewsItem, WatchRow } from './types';
+import type { Bar, CalendarEvent, ChartRange, NewsItem, TopRow, WatchRow } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -21,5 +21,12 @@ export const api = {
       method: 'DELETE',
     }),
   getNews: () => request<{ enabled: boolean; items: NewsItem[] }>('/api/news'),
-  getCalendar: () => request<{ events: CalendarEvent[] }>('/api/calendar'),
+  getCalendar: () => request<{ events: CalendarEvent[]; earningsConfigured: boolean }>('/api/calendar'),
+  getBars: (symbol: string, range: ChartRange) =>
+    request<{ symbol: string; range: ChartRange; bars: Bar[] }>(
+      `/api/bars/${encodeURIComponent(symbol)}?range=${range}`,
+    ),
+  getContext: () =>
+    request<{ series: { symbol: string; points: number[] }[] }>('/api/context'),
+  getTop: () => request<{ rows: TopRow[] }>('/api/top'),
 };

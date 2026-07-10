@@ -1,8 +1,8 @@
-import type { NewsItem } from '../types';
+import type { CalendarEvent, NewsItem } from '../types';
 import { warn } from '../util/log';
 import { RateLimiter } from '../util/rateLimiter';
 import { isCaSymbol } from '../util/symbols';
-import type { NewsSource } from './DataSource';
+import type { EarningsSource, NewsSource } from './DataSource';
 
 const BASE = 'https://finnhub.io/api/v1';
 /** Finnhub free cap is 60 calls/min; budget well under it (spec: < 30). */
@@ -24,11 +24,12 @@ interface FinnhubArticle {
  * Free tier covers US-listed symbols; .TO symbols are skipped rather than
  * burning budget on empty responses.
  */
-export class FinnhubSource implements NewsSource {
+export class FinnhubSource implements NewsSource, EarningsSource {
   readonly id = 'finnhub';
 
   private limiter = new RateLimiter('finnhub', BUDGET_PER_MIN);
   private cache = new Map<string, { items: NewsItem[]; fetchedAt: number }>();
+  private earningsCache: { events: CalendarEvent[]; fetchedAt: number } | null = null;
   private authFailed = false;
 
   constructor(private apiKey: string) {}
@@ -88,4 +89,65 @@ export class FinnhubSource implements NewsSource {
     }
     return all.sort((a, b) => b.ts - a.ts);
   }
+
+  // ---- earnings calendar ----
+
+  async getEarnings(symbols: string[], fromMs: number, toMs: number): Promise<CalendarEvent[]> {
+    if (this.authFailed) return [];
+    const wanted = new Set(symbols.filter((s) => !isCaSymbol(s)));
+    if (!wanted.size) return [];
+
+    const now = Date.now();
+    // Earnings dates move slowly — one range call, cached for the hub's cycle.
+    if (this.earningsCache && now - this.earningsCache.fetchedAt < EARNINGS_CACHE_MS) {
+      return this.earningsCache.events.filter((e) => e.symbol && wanted.has(e.symbol));
+    }
+    if (!this.limiter.tryAcquire()) {
+      return this.earningsCache?.events.filter((e) => e.symbol && wanted.has(e.symbol)) ?? [];
+    }
+
+    try {
+      const from = new Date(fromMs).toISOString().slice(0, 10);
+      const to = new Date(toMs).toISOString().slice(0, 10);
+      const res = await fetch(`${BASE}/calendar/earnings?from=${from}&to=${to}&token=${this.apiKey}`);
+      if (res.status === 401 || res.status === 403) {
+        this.authFailed = true;
+        warn('finnhub', 'auth failed — check FINNHUB_KEY (earnings paused until restart)');
+        return [];
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { earningsCalendar?: FinnhubEarning[] };
+      const events: CalendarEvent[] = (body.earningsCalendar ?? [])
+        .filter((e) => e.symbol && e.date)
+        .map((e) => ({
+          id: `earn-${e.symbol}-${e.date}`,
+          date: e.date,
+          time: EARNINGS_HOUR[e.hour ?? ''] ?? undefined,
+          title: `${e.symbol} earnings`,
+          country: 'US',
+          importance: 'high' as const,
+          category: 'earnings' as const,
+          symbol: e.symbol,
+        }));
+      this.earningsCache = { events, fetchedAt: now };
+      return events.filter((e) => e.symbol && wanted.has(e.symbol));
+    } catch (e) {
+      warn('finnhub', 'earnings fetch failed:', e instanceof Error ? e.message : e);
+      return this.earningsCache?.events.filter((ev) => ev.symbol && wanted.has(ev.symbol)) ?? [];
+    }
+  }
 }
+
+interface FinnhubEarning {
+  symbol: string;
+  date: string; // YYYY-MM-DD
+  hour?: string; // "bmo" | "amc" | "dmh"
+}
+
+/** Finnhub earnings-calendar TTL: dates change rarely, so keep it long. */
+const EARNINGS_CACHE_MS = 6 * 60 * 60_000;
+const EARNINGS_HOUR: Record<string, string> = {
+  bmo: 'BEFORE OPEN',
+  amc: 'AFTER CLOSE',
+  dmh: 'DURING MKT',
+};
