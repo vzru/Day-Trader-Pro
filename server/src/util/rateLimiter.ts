@@ -5,11 +5,14 @@
  */
 export class RateLimiter {
   private stamps: number[] = [];
+  private lastAt = 0;
 
   constructor(
     public readonly name: string,
     private readonly maxPerWindow: number,
     private readonly windowMs = 60_000,
+    /** Optional minimum spacing between calls, to avoid bursts. */
+    private readonly minIntervalMs = 0,
   ) {}
 
   private prune(now: number): void {
@@ -28,7 +31,9 @@ export class RateLimiter {
     const now = Date.now();
     this.prune(now);
     if (this.stamps.length >= this.maxPerWindow) return false;
+    if (now - this.lastAt < this.minIntervalMs) return false;
     this.stamps.push(now);
+    this.lastAt = now;
     return true;
   }
 
@@ -37,7 +42,9 @@ export class RateLimiter {
     for (;;) {
       if (this.tryAcquire()) return;
       const now = Date.now();
-      const waitMs = Math.max(50, this.stamps[0] + this.windowMs - now);
+      const windowWait = this.stamps.length >= this.maxPerWindow ? this.stamps[0] + this.windowMs - now : 0;
+      const spacingWait = this.lastAt + this.minIntervalMs - now;
+      const waitMs = Math.max(50, windowWait, spacingWait);
       await new Promise((r) => setTimeout(r, waitMs));
     }
   }

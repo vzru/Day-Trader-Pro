@@ -2,6 +2,7 @@ import { config } from '../config';
 import { AlpacaSource } from '../datasources/alpaca';
 import type { DataSource, NewsSource } from '../datasources/DataSource';
 import { SimSource } from '../datasources/sim';
+import { YahooSource } from '../datasources/yahoo';
 import type { FeedId, FeedState, FeedStatus } from '../types';
 import { log } from '../util/log';
 
@@ -36,13 +37,14 @@ export class Router {
     const simUs = new SimSource('us');
     const simCa = new SimSource('ca');
 
-    // Milestone 3 wires Yahoo here.
     this.us =
       config.usFeed === 'alpaca' && config.alpacaKeyId && config.alpacaSecret
         ? new AlpacaSource(config.alpacaKeyId, config.alpacaSecret)
         : simUs;
-    this.ca = simCa;
-    this.fundamentals = simCa;
+    this.ca = config.caFeed === 'yahoo' ? new YahooSource() : simCa;
+    // Yahoo serves market cap / float / short interest for US symbols too;
+    // Alpaca's free data API has no fundamentals.
+    this.fundamentals = this.ca instanceof YahooSource ? this.ca : simCa;
     this.news = config.newsFeed === 'sim' ? simUs : null;
 
     this.statuses.set('us', {

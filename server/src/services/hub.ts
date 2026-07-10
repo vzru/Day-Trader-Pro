@@ -50,6 +50,7 @@ export class Hub {
   async start(): Promise<void> {
     this.selected = this.watchlist.list()[0] ?? 'AAPL';
     await this.refreshTracked();
+    await this.ensureBars(this.selected);
     this.timers.push(setInterval(() => this.pushDetail(), DETAIL_INTERVAL_MS));
     this.timers.push(setInterval(() => this.broadcastStatus(), STATUS_INTERVAL_MS));
     if (config.newsFeed !== 'off') {
@@ -116,13 +117,28 @@ export class Hub {
             this.avgVol.set(sym, daily.reduce((s, b) => s + b.v, 0) / daily.length);
           }
         }
-        if (!this.bars.has(sym)) {
-          const intraday = await this.router.providerFor(sym).getBars(sym, '1Min', 390);
-          this.bars.set(sym, intraday);
-        }
       } catch (e) {
         warn('hub', `prime failed for ${sym}:`, e instanceof Error ? e.message : e);
       }
+    }
+  }
+
+  /**
+   * Seed intraday 1-min history for one symbol (the selected one). Charts
+   * only ever show the selected symbol, so this is fetched lazily to keep
+   * REST usage low; live minute bars keep accruing via the stream.
+   */
+  private async ensureBars(symbol: string): Promise<void> {
+    if ((this.bars.get(symbol)?.length ?? 0) > 5) return;
+    try {
+      const intraday = await this.router.providerFor(symbol).getBars(symbol, '1Min', 390);
+      if (intraday.length) {
+        const live = this.bars.get(symbol) ?? [];
+        const merged = [...intraday, ...live.filter((b) => b.t > intraday[intraday.length - 1].t)];
+        this.bars.set(symbol, merged);
+      }
+    } catch (e) {
+      warn('hub', `bars seed failed for ${symbol}:`, e instanceof Error ? e.message : e);
     }
   }
 
@@ -159,6 +175,8 @@ export class Hub {
     if (!symbol) return;
     this.selected = symbol;
     if (!this.primed.has(symbol)) await this.refreshTracked();
+    await this.ensureBars(symbol);
+    if (this.selected !== symbol) return; // user moved on while we fetched
     this.broadcast({ type: 'bars', symbol, bars: this.bars.get(symbol) ?? [] });
     this.pushDetail();
   }

@@ -52,13 +52,15 @@ async function main(): Promise<void> {
   hub.broadcast = (msg) => push.broadcast(msg);
   scanner.broadcast = (msg) => push.broadcast(msg);
 
-  await hub.start();
-  void scanner.start();
-
+  // Listen first: data priming can take a while when providers rate-limit,
+  // and the UI should be reachable (with placeholders) the whole time.
   server.listen(config.port, () => {
     log('server', `Day Trader Pro backend on http://localhost:${config.port}`);
     log('server', `feeds: us=${config.usFeed} ca=${config.caFeed} news=${config.newsFeed}${config.forceSim ? ' (FORCE_SIM)' : ''}`);
   });
+
+  await hub.start();
+  void scanner.start();
 }
 
 main().catch((e) => {
