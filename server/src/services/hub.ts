@@ -106,7 +106,7 @@ export class Hub {
         if (f.avgVolume30d) this.avgVol.set(f.symbol, f.avgVolume30d);
       }
     } catch (e) {
-      warn('hub', 'fundamentals prime failed:', e);
+      warn('hub', 'fundamentals prime failed:', e instanceof Error ? e.message : e);
     }
     for (const sym of symbols) {
       try {
@@ -121,7 +121,7 @@ export class Hub {
           this.bars.set(sym, intraday);
         }
       } catch (e) {
-        warn('hub', `prime failed for ${sym}:`, e);
+        warn('hub', `prime failed for ${sym}:`, e instanceof Error ? e.message : e);
       }
     }
   }
@@ -250,7 +250,7 @@ export class Hub {
       this.broadcast({ type: 'news', items: this.newsItems });
       this.router.setFeedState('news', config.newsFeed === 'sim' ? 'sim' : 'live');
     } catch (e) {
-      error('hub', 'news refresh failed (continuing without):', e);
+      error('hub', 'news refresh failed (continuing without):', e instanceof Error ? e.message : e);
       this.router.setFeedState('news', 'error', 'news fetch failed');
     }
   }

@@ -35,6 +35,18 @@ export function getSession(now = new Date()): SessionInfo {
   return { state, label: labels[state], etTime };
 }
 
+const ET_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Calendar date (YYYY-MM-DD) of a timestamp in Eastern Time. */
+export function etDateStr(ts: number): string {
+  return ET_DATE_FMT.format(new Date(ts));
+}
+
 /**
  * Fraction of the regular session (9:30-16:00 ET) elapsed, clamped to
  * [0.05, 1]. Used to pace "expected volume so far" for relative volume.

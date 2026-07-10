@@ -78,7 +78,7 @@ export class Scanner {
         const funds = await this.router.fundamentals.getFundamentals(batch);
         for (const f of funds) this.funds.set(f.symbol, f);
       } catch (e) {
-        warn('scanner', 'fundamentals batch failed (symbols kept, re-checked later):', e);
+        warn('scanner', 'fundamentals batch failed (symbols kept, re-checked later):', e instanceof Error ? e.message : e);
       }
     }
     let dropped = 0;
@@ -144,7 +144,7 @@ export class Scanner {
       this.updatedAt = Date.now();
       this.broadcast(this.message());
     } catch (e) {
-      error('scanner', 'scan failed (will retry next interval):', e);
+      error('scanner', 'scan failed (will retry next interval):', e instanceof Error ? e.message : e);
     } finally {
       this.scanning = false;
     }
@@ -156,7 +156,7 @@ export class Scanner {
       try {
         out.push(...(await provider.getSnapshot(symbols.slice(i, i + BATCH))));
       } catch (e) {
-        warn('scanner', `snapshot batch failed on ${provider.id}:`, e);
+        warn('scanner', `snapshot batch failed on ${provider.id}:`, e instanceof Error ? e.message : e);
       }
     }
     return out;

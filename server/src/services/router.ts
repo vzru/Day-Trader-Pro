@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { AlpacaSource } from '../datasources/alpaca';
 import type { DataSource, NewsSource } from '../datasources/DataSource';
 import { SimSource } from '../datasources/sim';
 import type { FeedId, FeedState, FeedStatus } from '../types';
@@ -35,8 +36,11 @@ export class Router {
     const simUs = new SimSource('us');
     const simCa = new SimSource('ca');
 
-    // Milestone 2 wires Alpaca here; milestone 3 wires Yahoo.
-    this.us = simUs;
+    // Milestone 3 wires Yahoo here.
+    this.us =
+      config.usFeed === 'alpaca' && config.alpacaKeyId && config.alpacaSecret
+        ? new AlpacaSource(config.alpacaKeyId, config.alpacaSecret)
+        : simUs;
     this.ca = simCa;
     this.fundamentals = simCa;
     this.news = config.newsFeed === 'sim' ? simUs : null;
