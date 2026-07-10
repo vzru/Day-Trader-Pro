@@ -1,0 +1,12 @@
+[
+  { "id": "cpi-jul", "date": "2026-07-14", "time": "08:30 ET", "title": "US CPI (June) — placeholder, verify date", "country": "US", "importance": "high" },
+  { "id": "boc-jul", "date": "2026-07-15", "time": "09:45 ET", "title": "Bank of Canada Rate Decision — placeholder, verify date", "country": "CA", "importance": "high" },
+  { "id": "eia-1", "date": "2026-07-15", "time": "10:30 ET", "title": "EIA Crude Oil Inventories (weekly, Wednesdays)", "country": "US", "importance": "medium" },
+  { "id": "retail-jul", "date": "2026-07-16", "time": "08:30 ET", "title": "US Retail Sales (June) — placeholder, verify date", "country": "US", "importance": "medium" },
+  { "id": "fomc-jul", "date": "2026-07-29", "time": "14:00 ET", "title": "FOMC Rate Decision + Press Conference — placeholder, verify date", "country": "US", "importance": "high" },
+  { "id": "pce-jul", "date": "2026-07-31", "time": "08:30 ET", "title": "US Core PCE (June) — placeholder, verify date", "country": "US", "importance": "medium" },
+  { "id": "nfp-aug", "date": "2026-08-07", "time": "08:30 ET", "title": "US Nonfarm Payrolls (July) — placeholder, verify date", "country": "US", "importance": "high" },
+  { "id": "cpi-aug", "date": "2026-08-12", "time": "08:30 ET", "title": "US CPI (July) — placeholder, verify date", "country": "US", "importance": "high" },
+  { "id": "boc-sep", "date": "2026-09-09", "time": "09:45 ET", "title": "Bank of Canada Rate Decision — placeholder, verify date", "country": "CA", "importance": "high" },
+  { "id": "fomc-sep", "date": "2026-09-16", "time": "14:00 ET", "title": "FOMC Rate Decision — placeholder, verify date", "country": "US", "importance": "high" }
+]

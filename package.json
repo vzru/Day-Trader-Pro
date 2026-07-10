@@ -1,0 +1,23 @@
+{
+  "name": "day-trader-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal-use day-trading monitoring dashboard for US and Canadian stocks. Screening only — no order placement, not investment advice.",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
+  }
+}
