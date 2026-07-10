@@ -20,6 +20,20 @@ interface AlpacaSnapshot {
   prevDailyBar?: { c: number; t: string };
 }
 
+interface RawBar {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+interface BarsPage {
+  bars: RawBar[] | null;
+  next_page_token?: string | null;
+}
+
 interface SymbolState {
   price: number | null;
   bid: number | null;
@@ -52,6 +66,8 @@ export class AlpacaSource implements DataSource {
   private stopped = false;
   private authFailed = false;
   private symbols: string[] = [];
+  /** Symbols currently subscribed on the live socket (for delta updates). */
+  private subscribed = new Set<string>();
   private handlers: StreamHandlers | null = null;
   private state = new Map<string, SymbolState>();
 
@@ -125,26 +141,50 @@ export class AlpacaSource implements DataSource {
 
   async getBars(symbol: string, timeframe: '1Min' | '1Day', lookback: number): Promise<Bar[]> {
     const now = Date.now();
-    const startMs = timeframe === '1Min' ? now - 24 * 3_600_000 : now - lookback * 2 * 86_400_000;
-    const data = await this.rest<{ bars: { t: string; o: number; h: number; l: number; c: number; v: number }[] | null }>(
-      `/stocks/${encodeURIComponent(symbol)}/bars`,
-      {
+    const path = `/stocks/${encodeURIComponent(symbol)}/bars`;
+    const mapBar = (b: RawBar): Bar => ({ t: Date.parse(b.t), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v });
+
+    if (timeframe === '1Min') {
+      const data = await this.rest<BarsPage>(path, {
+        timeframe,
+        start: new Date(now - 24 * 3_600_000).toISOString(),
+        limit: '1000',
+        feed: 'iex',
+        adjustment: 'raw',
+      });
+      let bars = (data.bars ?? []).map(mapBar);
+      if (bars.length) {
+        // keep only the most recent trading day's session
+        const lastDay = etDateStr(bars[bars.length - 1].t);
+        bars = bars.filter((b) => etDateStr(b.t) === lastDay);
+      }
+      return bars.slice(-Math.max(lookback, 1));
+    }
+
+    // Daily: a page is capped at 1000 bars and Alpaca returns them ascending
+    // from `start` with no implicit paging — so for long ranges (5Y ≈ 1260
+    // bars) a naive call yields the OLDEST 1000 bars, not the most recent.
+    // Fetch newest-first and page back until we have `lookback` bars.
+    const startMs = now - lookback * 2 * 86_400_000;
+    const collected: Bar[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 6; page++) {
+      const params: Record<string, string> = {
         timeframe,
         start: new Date(startMs).toISOString(),
         limit: '1000',
         feed: 'iex',
         adjustment: 'raw',
-      },
-    );
-    let bars: Bar[] = (data.bars ?? []).map((b) => ({
-      t: Date.parse(b.t), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v,
-    }));
-    if (timeframe === '1Min' && bars.length) {
-      // keep only the most recent trading day's session
-      const lastDay = etDateStr(bars[bars.length - 1].t);
-      bars = bars.filter((b) => etDateStr(b.t) === lastDay);
+        sort: 'desc',
+      };
+      if (pageToken) params.page_token = pageToken;
+      const data = await this.rest<BarsPage>(path, params);
+      for (const b of data.bars ?? []) collected.push(mapBar(b));
+      pageToken = data.next_page_token ?? undefined;
+      if (!pageToken || collected.length >= lookback) break;
     }
-    return bars.slice(-Math.max(lookback, 1));
+    collected.reverse(); // newest-first -> chronological
+    return collected.slice(-Math.max(lookback, 1));
   }
 
   async getFundamentals(symbols: string[]): Promise<Fundamentals[]> {
@@ -160,11 +200,12 @@ export class AlpacaSource implements DataSource {
     this.handlers = handlers;
     this.stopped = false;
 
-    if (this.ws && this.wsAuthed) {
-      this.sendSubscription();
+    if (this.wsAuthed) {
+      this.applySubscription();
     } else if (!this.ws) {
       this.connect();
     }
+    // else: a connect is already in flight; on auth it subscribes the current set.
 
     void this.refreshSnapshots();
     if (!this.refreshTimer) {
@@ -172,16 +213,13 @@ export class AlpacaSource implements DataSource {
       this.refreshTimer.unref?.();
     }
 
-    return () => {
-      this.stopped = true;
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      if (this.refreshTimer) {
-        clearInterval(this.refreshTimer);
-        this.refreshTimer = null;
-      }
-      this.ws?.close();
-      this.ws = null;
-    };
+    // Alpaca free allows a single websocket connection, so this source keeps
+    // ONE persistent socket for its lifetime and updates its subscription in
+    // place. We deliberately do not tear the socket down on unsubscribe —
+    // doing that on every watchlist/select change made the closing socket
+    // overlap the next one's open and Alpaca rejected it (406 connection
+    // limit). Re-subscriptions above are diffed and applied live instead.
+    return () => {};
   }
 
   private connect(): void {
@@ -231,7 +269,8 @@ export class AlpacaSource implements DataSource {
         if (m.msg === 'authenticated') {
           this.wsAuthed = true;
           this.reconnectAttempts = 0;
-          this.sendSubscription();
+          this.subscribed = new Set(); // fresh socket has no server-side subscriptions
+          this.applySubscription();
         }
         break;
       case 'subscription':
@@ -288,16 +327,19 @@ export class AlpacaSource implements DataSource {
     }
   }
 
-  private sendSubscription(): void {
-    if (!this.ws || !this.wsAuthed || !this.symbols.length) return;
-    this.ws.send(
-      JSON.stringify({
-        action: 'subscribe',
-        trades: this.symbols,
-        quotes: this.symbols,
-        bars: this.symbols,
-      }),
-    );
+  /** Diff the desired symbol set against what's live and send only the changes. */
+  private applySubscription(): void {
+    if (!this.ws || !this.wsAuthed) return;
+    const next = new Set(this.symbols);
+    const toAdd = [...next].filter((s) => !this.subscribed.has(s));
+    const toRemove = [...this.subscribed].filter((s) => !next.has(s));
+    if (toRemove.length) {
+      this.ws.send(JSON.stringify({ action: 'unsubscribe', trades: toRemove, quotes: toRemove, bars: toRemove }));
+    }
+    if (toAdd.length) {
+      this.ws.send(JSON.stringify({ action: 'subscribe', trades: toAdd, quotes: toAdd, bars: toAdd }));
+    }
+    this.subscribed = next;
   }
 
   private stateFor(symbol: string): SymbolState {
