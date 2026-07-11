@@ -117,9 +117,9 @@ export default function TickerDetail({
         <Stat label="PREV CLOSE" value={fmtPrice(q?.prevClose ?? null, symbol)} />
         <Stat label="VOLUME" value={fmtCompact(q?.volume ?? null)} />
         <Stat label="VWAP" value={fmtPrice(detail?.vwap ?? null, symbol)} />
-        <Stat label="MKT CAP" value={fmtCap(f?.marketCap ?? null)} />
         <Stat label="P/E" value={fmtRatio(f?.peRatio ?? null)} />
         <Stat label="DIV YIELD" value={f?.dividendYield ? fmtPct(f.dividendYield, false) : '—'} />
+        <Stat label="MKT CAP" value={fmtCap(f?.marketCap ?? null)} />
       </div>
 
       {q?.source.includes('IEX') && (

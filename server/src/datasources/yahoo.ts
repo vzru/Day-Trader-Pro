@@ -176,14 +176,23 @@ export class YahooSource implements DataSource {
 
   // ---- bars ----
 
-  async getBars(symbol: string, timeframe: '1Min' | '1Day', lookback: number): Promise<Bar[]> {
+  async getBars(symbol: string, timeframe: '1Min' | '1Hour' | '1Day', lookback: number): Promise<Bar[]> {
     await this.gate();
     try {
+      const hourlyWindowDays = Math.max(8, Math.ceil((lookback / 6.5) * 1.5));
+      const period1 = new Date(
+        Date.now() -
+          (timeframe === '1Min'
+            ? 24 * 3_600_000
+            : timeframe === '1Hour'
+              ? hourlyWindowDays * 86_400_000
+              : lookback * 2 * 86_400_000),
+      );
       const result = await yahooFinance.chart(
         symbol,
         {
-          period1: new Date(Date.now() - (timeframe === '1Min' ? 24 * 3_600_000 : lookback * 2 * 86_400_000)),
-          interval: timeframe === '1Min' ? '1m' : '1d',
+          period1,
+          interval: timeframe === '1Min' ? '1m' : timeframe === '1Hour' ? '1h' : '1d',
         },
         FETCH_OPTS,
       );
@@ -213,7 +222,8 @@ export class YahooSource implements DataSource {
 
   // ---- fundamentals ----
 
-  async getFundamentals(symbols: string[]): Promise<Fundamentals[]> {
+  async getFundamentals(symbols: string[], opts: { enrich?: boolean } = {}): Promise<Fundamentals[]> {
+    const enrich = opts.enrich ?? true;
     const now = Date.now();
     const needQuote = symbols.filter((s) => {
       const c = this.fundCache.get(s);
@@ -230,8 +240,9 @@ export class YahooSource implements DataSource {
 
     // float + short interest need one quoteSummary call per symbol — only
     // do that for small sets (watchlist / selected), never the whole
-    // universe, and only for actual equities (not indices/ETFs/FX)
-    if (symbols.length <= ENRICH_LIMIT) {
+    // universe, and only for actual equities (not indices/ETFs/FX). Callers
+    // that just need cheap batched fields pass enrich:false to stay fast.
+    if (enrich && symbols.length <= ENRICH_LIMIT) {
       for (const symbol of symbols) {
         if (this.quoteType.get(symbol) !== 'EQUITY') continue;
         const cached = this.fundCache.get(symbol);

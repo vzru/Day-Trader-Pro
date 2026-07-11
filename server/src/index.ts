@@ -54,6 +54,10 @@ async function main(): Promise<void> {
   hub.broadcast = (msg) => push.broadcast(msg);
   scanner.broadcast = (msg) => push.broadcast(msg);
   top.broadcast = (msg) => push.broadcast(msg);
+  // Earnings cover the Top-25 too: let the hub read the live top names, and
+  // re-pull earnings whenever that list refreshes.
+  hub.topSymbols = () => top.symbols();
+  top.onUpdate = () => hub.onTopUpdated();
 
   // Listen first: data priming can take a while when providers rate-limit,
   // and the UI should be reachable (with placeholders) the whole time.
@@ -63,8 +67,9 @@ async function main(): Promise<void> {
   });
 
   await hub.start();
-  void scanner.start();
+  // Top-25 is on-screen, so give it the Yahoo feed before the background scanner.
   void top.start();
+  void scanner.start();
 }
 
 main().catch((e) => {

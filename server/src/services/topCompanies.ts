@@ -32,8 +32,15 @@ export class TopCompanies {
   private rows: TopRow[] = [];
   private timer: NodeJS.Timeout | null = null;
   broadcast: (msg: ServerMessage) => void = () => {};
+  /** Fired after each refresh (e.g. so the hub can pull the top names' earnings). */
+  onUpdate: () => void = () => {};
 
   constructor(private router: Router) {}
+
+  /** Current Top-25 tickers, ranked. */
+  symbols(): string[] {
+    return this.rows.map((r) => r.symbol);
+  }
 
   async start(): Promise<void> {
     await this.refresh();
@@ -53,7 +60,7 @@ export class TopCompanies {
     try {
       // Market caps + names for the whole pool (Yahoo, cached 12h so this is
       // one network burst then free).
-      const funds = await this.router.fundamentals.getFundamentals(POOL);
+      const funds = await this.router.fundamentals.getFundamentals(POOL, { enrich: false });
       const ranked = funds
         .filter((f) => typeof f.marketCap === 'number' && f.marketCap! > 0)
         .sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0))
@@ -84,6 +91,7 @@ export class TopCompanies {
         };
       });
       this.broadcast(this.message());
+      this.onUpdate();
     } catch (e) {
       warn('top', 'refresh failed (continuing):', e instanceof Error ? e.message : e);
     }

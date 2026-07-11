@@ -146,9 +146,10 @@ export interface CalendarEvent {
   importance: 'high' | 'medium' | 'low';
   category?: CalendarCategory;
   symbol?: string;
+  name?: string;
 }
 
-export type ChartRange = '1D' | '1M' | '6M' | '1Y' | '5Y';
+export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y';
 
 export interface ScannerState {
   results: ScannerResult[];
@@ -166,6 +167,7 @@ export type ServerMessage =
   | { type: 'detail'; detail: TickerDetail }
   | { type: 'watchlist'; rows: WatchRow[] }
   | { type: 'top'; rows: TopRow[] }
+  | { type: 'earnings'; events: CalendarEvent[] }
   | ({ type: 'scanner' } & ScannerState)
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };

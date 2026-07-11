@@ -6,7 +6,7 @@ const W = 760;
 const H = 240;
 const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
 
-const RANGES: ChartRange[] = ['1D', '1M', '6M', '1Y', '5Y'];
+const RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y'];
 
 /** Running session VWAP per bar (mirrors the server's calculation). */
 function vwapSeries(bars: Bar[]): (number | null)[] {
@@ -130,7 +130,7 @@ export default function Chart({
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={`${isIntraday ? 'Intraday 1-minute' : `${range} daily`} chart for ${symbol}${isIntraday ? ' with VWAP overlay' : ''}`}
+        aria-label={`${isIntraday ? 'Intraday 1-minute' : range} chart for ${symbol}${isIntraday ? ' with VWAP overlay' : ''}`}
         onMouseMove={onMove}
         onMouseLeave={() => setHoverIdx(null)}
       >

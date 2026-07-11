@@ -139,7 +139,7 @@ export class AlpacaSource implements DataSource {
     };
   }
 
-  async getBars(symbol: string, timeframe: '1Min' | '1Day', lookback: number): Promise<Bar[]> {
+  async getBars(symbol: string, timeframe: '1Min' | '1Hour' | '1Day', lookback: number): Promise<Bar[]> {
     const now = Date.now();
     const path = `/stocks/${encodeURIComponent(symbol)}/bars`;
     const mapBar = (b: RawBar): Bar => ({ t: Date.parse(b.t), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v });
@@ -161,11 +161,14 @@ export class AlpacaSource implements DataSource {
       return bars.slice(-Math.max(lookback, 1));
     }
 
-    // Daily: a page is capped at 1000 bars and Alpaca returns them ascending
-    // from `start` with no implicit paging — so for long ranges (5Y ≈ 1260
-    // bars) a naive call yields the OLDEST 1000 bars, not the most recent.
-    // Fetch newest-first and page back until we have `lookback` bars.
-    const startMs = now - lookback * 2 * 86_400_000;
+    // Hourly / daily: a page is capped at 1000 bars and Alpaca returns them
+    // ascending from `start` with no implicit paging — so for long ranges
+    // (5Y ≈ 1260 bars) a naive call yields the OLDEST 1000 bars, not the most
+    // recent. Fetch newest-first and page back until we have `lookback` bars.
+    const startMs =
+      timeframe === '1Hour'
+        ? now - Math.max(12, Math.ceil((lookback / 6.5) * 1.5)) * 86_400_000 // ~lookback hrs of market time
+        : now - lookback * 2 * 86_400_000;
     const collected: Bar[] = [];
     let pageToken: string | undefined;
     for (let page = 0; page < 6; page++) {
@@ -187,7 +190,7 @@ export class AlpacaSource implements DataSource {
     return collected.slice(-Math.max(lookback, 1));
   }
 
-  async getFundamentals(symbols: string[]): Promise<Fundamentals[]> {
+  async getFundamentals(symbols: string[], _opts: { enrich?: boolean } = {}): Promise<Fundamentals[]> {
     // Alpaca's free market-data API has no fundamentals; the router sources
     // market cap / float / short interest from Yahoo for US symbols too.
     return symbols.map((symbol) => ({ symbol }));

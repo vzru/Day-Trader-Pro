@@ -4,17 +4,47 @@ import type {
   Bar, CalendarEvent, Fundamentals, NewsItem, Quote, ServerMessage, TickerDetail, WatchRow,
 } from '../types';
 import { error, log, warn } from '../util/log';
-import { getSession, sessionElapsedFraction } from '../util/session';
+import { etDateStr, getSession, sessionElapsedFraction } from '../util/session';
 import { gapPct, rangePct, relativeVolume, rsi14, spreadPct, vwap } from './indicators';
 import { computeFactors, setupScore } from './score';
 import { exchangeOf, isCaSymbol, Router } from './router';
 import type { WatchlistStore } from './watchlist';
 
-/** Chart ranges the UI can request. 1D is intraday (1-min); the rest are daily. */
-export type ChartRange = '1D' | '1M' | '6M' | '1Y' | '5Y';
-const RANGE_LOOKBACK: Record<Exclude<ChartRange, '1D'>, number> = {
-  '1M': 22, '6M': 126, '1Y': 252, '5Y': 1260,
+/** Chart ranges the UI can request. 1D is intraday (1-min), 1W is hourly, rest daily. */
+export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y';
+const RANGE_LOOKBACK: Record<'6M' | '1Y' | '5Y', number> = {
+  '6M': 126, '1Y': 252, '5Y': 1260,
 };
+/** ~5 trading days of regular-hours hourly bars. */
+const WEEK_HOURLY_LOOKBACK = 40;
+/** ~22 trading days of regular-hours hourly bars (downsampled to open/mid/close). */
+const MONTH_HOURLY_LOOKBACK = 170;
+
+/**
+ * Reduce intraday hourly bars to three points per trading day — the opening
+ * price, a midday price, and the closing price — for the 1-month chart.
+ */
+function dailyOpenMidClose(hourly: Bar[]): Bar[] {
+  const byDay = new Map<string, Bar[]>();
+  for (const b of hourly) {
+    const day = etDateStr(b.t);
+    const arr = byDay.get(day);
+    if (arr) arr.push(b);
+    else byDay.set(day, [b]);
+  }
+  const out: Bar[] = [];
+  for (const bars of byDay.values()) {
+    bars.sort((a, b) => a.t - b.t);
+    const first = bars[0];
+    const last = bars[bars.length - 1];
+    const mid = bars[Math.floor((bars.length - 1) / 2)];
+    const pt = (t: number, price: number, v = 0): Bar => ({ t, o: price, h: price, l: price, c: price, v });
+    out.push(pt(first.t, first.o)); // start of day (open)
+    if (bars.length > 2) out.push(pt(mid.t, mid.c)); // midday
+    out.push(pt(last.t, last.c, last.v)); // end of day (close)
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
 
 /** Evenly pick at most `n` values from a series (keeps first + last). */
 function downsample(values: number[], n: number): number[] {
@@ -35,7 +65,10 @@ const STATUS_INTERVAL_MS = 15_000;
 const NEWS_INTERVAL_MS = 120_000;
 const NEWS_LOOKBACK_MS = 72 * 3_600_000;
 const EARNINGS_INTERVAL_MS = 6 * 3_600_000; // earnings dates move slowly
-const EARNINGS_LOOKAHEAD_MS = 60 * 86_400_000;
+const EARNINGS_LOOKAHEAD_MS = 90 * 86_400_000; // ~one quarter ahead
+// Sparklines are decorative — seed them after the on-screen watchlist / detail /
+// top list have had first crack at the (rate-limited) Yahoo feed.
+const CONTEXT_SEED_DELAY_MS = 6_000;
 
 /**
  * Central state hub: tracks watchlist + context + selected symbols, pumps
@@ -48,9 +81,14 @@ export class Hub {
   private funds = new Map<string, Fundamentals>();
   private avgVol = new Map<string, number>();
   private primed = new Set<string>();
+  /** Symbols whose slow fields (float / short interest) have been fetched. */
+  private enriched = new Set<string>();
   private newsItems: NewsItem[] = [];
   private earnings: CalendarEvent[] = [];
+  private earningsSig = '';
   private latestNewsTs = new Map<string, number>();
+  /** Supplies the current Top-25 symbols so their earnings are included. Set in index.ts. */
+  topSymbols: () => string[] = () => [];
   private lastTickSent = new Map<string, number>();
   private unsubs: (() => void)[] = [];
   private timers: NodeJS.Timeout[] = [];
@@ -69,8 +107,12 @@ export class Hub {
 
   async start(): Promise<void> {
     this.selected = this.watchlist.list()[0] ?? 'AAPL';
-    await this.refreshTracked();
-    await this.ensureBars(this.selected);
+    // Fundamentals (Yahoo) and the chart bars (Alpaca for a US pick) hit
+    // different providers, so fetch them in parallel.
+    await Promise.all([this.refreshTracked(), this.ensureBars(this.selected)]);
+    // Slow float/short-interest lookup for the selected stock only — don't
+    // block startup on it; the detail repaints when it lands.
+    void this.enrichSelected(this.selected);
     this.timers.push(setInterval(() => this.pushDetail(), DETAIL_INTERVAL_MS));
     this.timers.push(setInterval(() => this.broadcastStatus(), STATUS_INTERVAL_MS));
     if (config.newsFeed !== 'off') {
@@ -82,8 +124,9 @@ export class Hub {
       this.timers.push(setInterval(() => void this.refreshEarnings(), EARNINGS_INTERVAL_MS));
     }
     // Seed intraday history for the context-strip indices so each gets a
-    // daily-movement sparkline (fire-and-forget; the poll keeps them current).
-    void this.seedContextBars();
+    // daily-movement sparkline. Deferred so the watchlist / detail / top list
+    // get the rate-limited Yahoo feed first; the poll keeps them current after.
+    setTimeout(() => void this.seedContextBars(), CONTEXT_SEED_DELAY_MS).unref?.();
     log('hub', `started; selected=${this.selected}, tracking ${this.trackedSymbols().length} symbols`);
   }
 
@@ -128,7 +171,10 @@ export class Hub {
   private async primeSymbols(symbols: string[]): Promise<void> {
     for (const s of symbols) this.primed.add(s);
     try {
-      const funds = await this.router.fundamentals.getFundamentals(symbols);
+      // Fast path: batched cheap fields only (cap / avg vol / P/E / dividend).
+      // The slow per-symbol float+short lookup is done lazily for the selected
+      // stock via enrichSelected(), not for the whole watchlist up front.
+      const funds = await this.router.fundamentals.getFundamentals(symbols, { enrich: false });
       for (const f of funds) {
         this.funds.set(f.symbol, f);
         if (f.avgVolume30d) this.avgVol.set(f.symbol, f.avgVolume30d);
@@ -147,6 +193,26 @@ export class Hub {
       } catch (e) {
         warn('hub', `prime failed for ${sym}:`, e instanceof Error ? e.message : e);
       }
+    }
+  }
+
+  /**
+   * Fetch the slow fields (float / short interest) for one symbol — the
+   * selected one. Runs in the background and repaints the detail when it lands.
+   */
+  private async enrichSelected(symbol: string): Promise<void> {
+    if (this.enriched.has(symbol)) return;
+    this.enriched.add(symbol); // guard against duplicate in-flight fetches
+    try {
+      const [f] = await this.router.fundamentals.getFundamentals([symbol], { enrich: true });
+      if (f) {
+        this.funds.set(symbol, f);
+        if (f.avgVolume30d) this.avgVol.set(symbol, f.avgVolume30d);
+      }
+      if (this.selected === symbol) this.pushDetail();
+    } catch (e) {
+      this.enriched.delete(symbol); // let a later selection retry
+      warn('hub', `enrich failed for ${symbol}:`, e instanceof Error ? e.message : e);
     }
   }
 
@@ -227,6 +293,10 @@ export class Hub {
     if (this.selected !== symbol) return; // user moved on while we fetched
     this.broadcast({ type: 'bars', symbol, bars: this.bars.get(symbol) ?? [] });
     this.pushDetail();
+    // Fill in float / short interest for the newly selected stock (lazy).
+    void this.enrichSelected(symbol);
+    // Pull the selected stock's news so the (selected-scoped) news panel fills in.
+    void this.refreshNews();
   }
 
   getSelected(): string | null {
@@ -293,6 +363,11 @@ export class Hub {
       if (live.length > 5) return live;
       return provider.getBars(symbol, '1Min', 390);
     }
+    if (range === '1W') return provider.getBars(symbol, '1Hour', WEEK_HOURLY_LOOKBACK);
+    if (range === '1M') {
+      const hourly = await provider.getBars(symbol, '1Hour', MONTH_HOURLY_LOOKBACK);
+      return dailyOpenMidClose(hourly);
+    }
     return provider.getBars(symbol, '1Day', RANGE_LOOKBACK[range]);
   }
 
@@ -343,13 +418,37 @@ export class Hub {
   private async refreshEarnings(): Promise<void> {
     if (!this.router.earnings) return;
     try {
-      const symbols = [...new Set([...this.watchlist.list(), ...(this.selected ? [this.selected] : [])])]
+      const symbols = [...new Set([...this.watchlist.list(), ...this.topSymbols(), ...(this.selected ? [this.selected] : [])])]
         .filter((s) => !isCaSymbol(s));
       const now = Date.now();
-      this.earnings = await this.router.earnings.getEarnings(symbols, now, now + EARNINGS_LOOKAHEAD_MS);
+      let events = (await this.router.earnings.getEarnings(symbols, now, now + EARNINGS_LOOKAHEAD_MS))
+        .filter((e) => e.date >= new Date(now).toISOString().slice(0, 10)) // upcoming only
+        .sort((a, b) => a.date.localeCompare(b.date));
+      // Attach company names from the fundamentals cache (Top-25 / watchlist are
+      // already fetched, so this is a cache hit, not a network call).
+      if (events.length) {
+        const es = [...new Set(events.map((e) => e.symbol).filter((s): s is string => !!s))];
+        try {
+          const funds = await this.router.fundamentals.getFundamentals(es, { enrich: false });
+          const nameBy = new Map(funds.map((f) => [f.symbol, f.name]));
+          events = events.map((e) => (e.symbol && nameBy.get(e.symbol) ? { ...e, name: nameBy.get(e.symbol) } : e));
+        } catch {
+          /* names are optional decoration */
+        }
+      }
+      const sig = events.map((e) => `${e.symbol}@${e.date}@${e.name ?? ''}`).join('|');
+      if (sig === this.earningsSig) return; // unchanged — don't re-broadcast
+      this.earningsSig = sig;
+      this.earnings = events;
+      this.broadcast({ type: 'earnings', events });
     } catch (e) {
       warn('hub', 'earnings refresh failed (continuing without):', e instanceof Error ? e.message : e);
     }
+  }
+
+  /** Called when the Top-25 list changes so their earnings get pulled in. */
+  onTopUpdated(): void {
+    void this.refreshEarnings();
   }
 
   getEarnings(): CalendarEvent[] {
@@ -380,6 +479,7 @@ export class Hub {
       if (detail) msgs.push({ type: 'detail', detail });
     }
     if (this.newsItems.length) msgs.push({ type: 'news', items: this.newsItems });
+    if (this.earnings.length) msgs.push({ type: 'earnings', events: this.earnings });
     return msgs;
   }
 

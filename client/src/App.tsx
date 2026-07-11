@@ -34,6 +34,7 @@ export default function App() {
   const [newsEnabled, setNewsEnabled] = useState(false);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [calendar, setCalendar] = useState<CalendarEvent[]>([]);
+  const [earnings, setEarnings] = useState<CalendarEvent[]>([]);
   const [earningsConfigured, setEarningsConfigured] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -79,6 +80,9 @@ export default function App() {
         break;
       case 'top':
         setTopRows(msg.rows);
+        break;
+      case 'earnings':
+        setEarnings(msg.events);
         break;
       case 'scanner':
         setScanner({ results: msg.results, universeSize: msg.universeSize, eligible: msg.eligible, updatedAt: msg.updatedAt });
@@ -146,7 +150,7 @@ export default function App() {
   return (
     <div className="app">
       <Header feeds={feeds} session={session} wsStatus={wsStatus} />
-      <ContextStrip ticks={ticks} />
+      <ContextStrip ticks={ticks} selected={selected} onSelect={select} />
 
       <div className="layout">
         <aside className="rail-left">
@@ -184,8 +188,8 @@ export default function App() {
         </main>
 
         <aside className="rail-right">
-          {newsEnabled && <NewsTape items={news} />}
-          <CalendarPanel events={calendar} earningsConfigured={earningsConfigured} />
+          {newsEnabled && <NewsTape items={news} selected={selected} />}
+          <CalendarPanel macro={calendar} earnings={earnings} earningsConfigured={earningsConfigured} />
         </aside>
       </div>
 

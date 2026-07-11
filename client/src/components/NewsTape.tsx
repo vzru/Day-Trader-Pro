@@ -1,13 +1,20 @@
 import { fmtAge, fmtEtTime } from '../format';
 import type { NewsItem } from '../types';
 
-export default function NewsTape({ items }: { items: NewsItem[] }) {
+export default function NewsTape({ items, selected }: { items: NewsItem[]; selected: string | null }) {
+  // Scope the panel to the currently selected stock.
+  const rows = selected ? items.filter((n) => n.symbol === selected) : items;
+
   return (
     <section className="panel news">
-      <h2 className="panel-title">NEWS / CATALYSTS</h2>
-      {items.length === 0 && <p className="empty">No recent headlines for watchlist symbols.</p>}
+      <h2 className="panel-title">{selected ? `NEWS · ${selected}` : 'NEWS / CATALYSTS'}</h2>
+      {rows.length === 0 && (
+        <p className="empty">
+          {selected ? `No recent headlines for ${selected}.` : 'No recent headlines.'}
+        </p>
+      )}
       <div className="news-rows">
-        {items.map((n) => (
+        {rows.map((n) => (
           <div key={n.id} className="news-row">
             <div className="news-meta">
               <span className="news-time" title={new Date(n.ts).toLocaleString()}>

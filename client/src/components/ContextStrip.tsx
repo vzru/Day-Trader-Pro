@@ -14,7 +14,15 @@ const CONTEXT: { symbol: string; label: string }[] = [
 
 const SPARK_REFRESH_MS = 60_000;
 
-export default function ContextStrip({ ticks }: { ticks: TickMap }) {
+export default function ContextStrip({
+  ticks,
+  selected,
+  onSelect,
+}: {
+  ticks: TickMap;
+  selected: string | null;
+  onSelect: (symbol: string) => void;
+}) {
   const [series, setSeries] = useState<Record<string, number[]>>({});
 
   useEffect(() => {
@@ -44,7 +52,16 @@ export default function ContextStrip({ ticks }: { ticks: TickMap }) {
         const q = t?.quote;
         const cls = chgClass(q?.changePct);
         return (
-          <div key={symbol} className="context-cell" role="listitem">
+          <div
+            key={symbol}
+            className={`context-cell ${selected === symbol ? 'is-selected' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selected === symbol}
+            title={`View ${label} chart`}
+            onClick={() => onSelect(symbol)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect(symbol)}
+          >
             <Sparkline points={series[symbol]} dirClass={cls} label={label} />
             <div className="context-info">
               <span className="context-label">{label}</span>

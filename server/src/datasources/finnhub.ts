@@ -29,7 +29,7 @@ export class FinnhubSource implements NewsSource, EarningsSource {
 
   private limiter = new RateLimiter('finnhub', BUDGET_PER_MIN);
   private cache = new Map<string, { items: NewsItem[]; fetchedAt: number }>();
-  private earningsCache: { events: CalendarEvent[]; fetchedAt: number } | null = null;
+  private earningsCache = new Map<string, { events: CalendarEvent[]; fetchedAt: number }>();
   private authFailed = false;
 
   constructor(private apiKey: string) {}
@@ -94,47 +94,63 @@ export class FinnhubSource implements NewsSource, EarningsSource {
 
   async getEarnings(symbols: string[], fromMs: number, toMs: number): Promise<CalendarEvent[]> {
     if (this.authFailed) return [];
-    const wanted = new Set(symbols.filter((s) => !isCaSymbol(s)));
-    if (!wanted.size) return [];
-
+    // The undated calendar caps at 1500 rows (latest-first), which drops the
+    // near-term reports we care about — so query per symbol instead. Each call
+    // is targeted and cached; results merge into the returned list.
+    const wanted = symbols.filter((s) => !isCaSymbol(s));
     const now = Date.now();
-    // Earnings dates move slowly — one range call, cached for the hub's cycle.
-    if (this.earningsCache && now - this.earningsCache.fetchedAt < EARNINGS_CACHE_MS) {
-      return this.earningsCache.events.filter((e) => e.symbol && wanted.has(e.symbol));
-    }
-    if (!this.limiter.tryAcquire()) {
-      return this.earningsCache?.events.filter((e) => e.symbol && wanted.has(e.symbol)) ?? [];
-    }
+    const from = new Date(fromMs).toISOString().slice(0, 10);
+    const to = new Date(toMs).toISOString().slice(0, 10);
+    const out: CalendarEvent[] = [];
 
-    try {
-      const from = new Date(fromMs).toISOString().slice(0, 10);
-      const to = new Date(toMs).toISOString().slice(0, 10);
-      const res = await fetch(`${BASE}/calendar/earnings?from=${from}&to=${to}&token=${this.apiKey}`);
-      if (res.status === 401 || res.status === 403) {
-        this.authFailed = true;
-        warn('finnhub', 'auth failed — check FINNHUB_KEY (earnings paused until restart)');
-        return [];
+    for (const symbol of wanted) {
+      const cached = this.earningsCache.get(symbol);
+      if (cached && now - cached.fetchedAt < EARNINGS_CACHE_MS) {
+        out.push(...cached.events);
+        continue;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { earningsCalendar?: FinnhubEarning[] };
-      const events: CalendarEvent[] = (body.earningsCalendar ?? [])
-        .filter((e) => e.symbol && e.date)
-        .map((e) => ({
-          id: `earn-${e.symbol}-${e.date}`,
-          date: e.date,
-          time: EARNINGS_HOUR[e.hour ?? ''] ?? undefined,
-          title: `${e.symbol} earnings`,
-          country: 'US',
-          importance: 'high' as const,
-          category: 'earnings' as const,
-          symbol: e.symbol,
-        }));
-      this.earningsCache = { events, fetchedAt: now };
-      return events.filter((e) => e.symbol && wanted.has(e.symbol));
-    } catch (e) {
-      warn('finnhub', 'earnings fetch failed:', e instanceof Error ? e.message : e);
-      return this.earningsCache?.events.filter((ev) => ev.symbol && wanted.has(ev.symbol)) ?? [];
+      if (!this.limiter.tryAcquire()) {
+        if (cached) out.push(...cached.events); // over budget — serve cache, catch up next cycle
+        continue;
+      }
+      try {
+        const res = await fetch(
+          `${BASE}/calendar/earnings?from=${from}&to=${to}&symbol=${encodeURIComponent(symbol)}&token=${this.apiKey}`,
+        );
+        if (res.status === 401 || res.status === 403) {
+          this.authFailed = true;
+          warn('finnhub', 'auth failed — check FINNHUB_KEY (earnings paused until restart)');
+          break;
+        }
+        if (res.status === 429) {
+          warn('finnhub', 'earnings rate-limited — backing off this cycle');
+          break;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { earningsCalendar?: FinnhubEarning[] };
+        const events: CalendarEvent[] = (body.earningsCalendar ?? [])
+          .filter((e) => e.date)
+          .map((e) => ({
+            // Use the ticker we queried, not Finnhub's primary-listing form
+            // (e.g. keep TSM / ASML / BRK.B, not 2330.TW / ASML.AS / BRK.A).
+            id: `earn-${symbol}-${e.date}`,
+            date: e.date,
+            time: EARNINGS_HOUR[e.hour ?? ''] ?? undefined,
+            title: `${symbol} earnings`,
+            country: 'US',
+            importance: 'high' as const,
+            category: 'earnings' as const,
+            symbol,
+          }));
+        this.earningsCache.set(symbol, { events, fetchedAt: now });
+        out.push(...events);
+      } catch (e) {
+        warn('finnhub', `earnings fetch failed for ${symbol}:`, e instanceof Error ? e.message : e);
+        if (cached) out.push(...cached.events);
+        else this.earningsCache.set(symbol, { events: [], fetchedAt: now - EARNINGS_CACHE_MS / 2 });
+      }
     }
+    return out;
   }
 }
 

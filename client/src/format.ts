@@ -54,6 +54,30 @@ export function fmtDate(ts: number, longRange = false): string {
   return (longRange ? ET_MONTH_YEAR : ET_DATE).format(new Date(ts));
 }
 
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+/** "2026-08-11" -> "Aug 11" (parsed as a plain calendar date, no timezone shift). */
+export function fmtCalDate(iso: string): string {
+  const [, m, d] = iso.split('-').map(Number);
+  return m && d ? `${MONTH_ABBR[m - 1]} ${d}` : iso;
+}
+/** "2026-08-11" -> "Aug" */
+export function monthAbbr(iso: string): string {
+  return MONTH_ABBR[Number(iso.split('-')[1]) - 1] ?? '';
+}
+/** "2026-08-11" -> 11 */
+export function dayNum(iso: string): number {
+  return Number(iso.split('-')[2]);
+}
+/** "2026-08-11" -> "August 2026" */
+export function monthLabel(iso: string): string {
+  const [y, m] = iso.split('-').map(Number);
+  return `${MONTH_FULL[m - 1] ?? ''} ${y}`;
+}
+
 /** Common brand name people know, given a ticker + legal name. Null if none distinct. */
 const BRAND_OVERRIDES: Record<string, string> = {
   AAPL: 'Apple', MSFT: 'Microsoft', GOOGL: 'Google', GOOG: 'Google', AMZN: 'Amazon',

@@ -44,20 +44,22 @@ export default function TopCompanies({
               <div className="watch-top">
                 <span className="watch-rank">{row.rank}</span>
                 <span className="watch-symbol">{row.symbol}</span>
-                <span className="top-cap">{fmtCap(row.marketCap)}</span>
-                {!watched.has(row.symbol) && (
-                  <button
-                    className="top-add"
-                    aria-label={`Add ${row.symbol} to watchlist`}
-                    title="Add to watchlist"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAdd(row.symbol);
-                    }}
-                  >
-                    +
-                  </button>
-                )}
+                <span className="top-meta">
+                  {!watched.has(row.symbol) && (
+                    <button
+                      className="top-add"
+                      aria-label={`Add ${row.symbol} to watchlist`}
+                      title="Add to watchlist"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAdd(row.symbol);
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
+                  <span className="top-cap">{fmtCap(row.marketCap)}</span>
+                </span>
               </div>
               <div className="watch-top top-sub">
                 {brand && <span className="top-name">{brand}</span>}

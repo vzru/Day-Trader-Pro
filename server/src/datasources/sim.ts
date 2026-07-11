@@ -154,9 +154,29 @@ export class SimSource implements DataSource, NewsSource {
     return symbols.map((sym) => this.toQuote(this.state(sym), now));
   }
 
-  async getBars(symbol: string, timeframe: '1Min' | '1Day', lookback: number): Promise<Bar[]> {
+  async getBars(symbol: string, timeframe: '1Min' | '1Hour' | '1Day', lookback: number): Promise<Bar[]> {
     const s = this.state(symbol);
     if (timeframe === '1Min') return s.bars.slice(-lookback);
+    if (timeframe === '1Hour') {
+      // synthetic hourly bars for the 1-week range
+      const rand = mulberry32(hashSeed(symbol + ':hourly'));
+      const out: Bar[] = [];
+      let c = s.prevClose;
+      const hourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+      for (let i = lookback; i >= 1; i--) {
+        const o = c * (1 + (rand() - 0.5) * 0.01);
+        c = o * (1 + (rand() - 0.5) * 0.02);
+        out.push({
+          t: hourStart - i * 3_600_000,
+          o: round(o),
+          h: round(Math.max(o, c) * 1.005),
+          l: round(Math.min(o, c) * 0.995),
+          c: round(c),
+          v: Math.round(s.volPerTick * 60 * (5 + rand() * 10)),
+        });
+      }
+      return out;
+    }
     // synthetic daily bars for average-volume history
     const rand = mulberry32(hashSeed(symbol + ':daily'));
     const out: Bar[] = [];
@@ -194,7 +214,7 @@ export class SimSource implements DataSource, NewsSource {
     };
   }
 
-  async getFundamentals(symbols: string[]): Promise<Fundamentals[]> {
+  async getFundamentals(symbols: string[], _opts: { enrich?: boolean } = {}): Promise<Fundamentals[]> {
     return symbols.map((symbol) => {
       const rand = mulberry32(hashSeed(symbol + ':fund'));
       const floatShares = Math.round((20 + rand() * 580) * 1e6);

@@ -25,7 +25,7 @@ export interface DataSource {
   getSnapshot(symbols: string[]): Promise<Quote[]>;
 
   /** Historical bars, newest last. */
-  getBars(symbol: string, timeframe: '1Min' | '1Day', lookback: number): Promise<Bar[]>;
+  getBars(symbol: string, timeframe: '1Min' | '1Hour' | '1Day', lookback: number): Promise<Bar[]>;
 
   /**
    * Stream live (or polled) updates for the given symbols. Replaces any
@@ -34,8 +34,14 @@ export interface DataSource {
    */
   subscribeStream(symbols: string[], handlers: StreamHandlers): () => void;
 
-  /** Fundamentals (market cap, float, short interest, avg volume). Cached. */
-  getFundamentals(symbols: string[]): Promise<Fundamentals[]>;
+  /**
+   * Fundamentals (market cap, float, short interest, avg volume). Cached.
+   * `enrich: false` skips the slow per-symbol lookups (float / short interest)
+   * and returns only the cheap batched fields (cap, avg vol, P/E, dividend) —
+   * used to keep first-load fast; the expensive fields are fetched lazily for
+   * the selected symbol only.
+   */
+  getFundamentals(symbols: string[], opts?: { enrich?: boolean }): Promise<Fundamentals[]>;
 }
 
 /** Optional capability: providers that can serve news implement this. */

@@ -158,6 +158,8 @@ export interface CalendarEvent {
   category?: CalendarCategory;
   /** Ticker an earnings event applies to, e.g. "NVDA". */
   symbol?: string;
+  /** Company name for an earnings event, e.g. "Cisco Systems, Inc." */
+  name?: string;
 }
 
 // ---- websocket protocol (server -> client) ----
@@ -171,6 +173,7 @@ export type ServerMessage =
   | { type: 'detail'; detail: TickerDetail }
   | { type: 'watchlist'; rows: WatchRow[] }
   | { type: 'top'; rows: TopRow[] }
+  | { type: 'earnings'; events: CalendarEvent[] }
   | { type: 'scanner'; results: ScannerResult[]; universeSize: number; eligible: number; updatedAt: number }
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };

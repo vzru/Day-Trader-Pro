@@ -132,7 +132,10 @@ input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   flex-direction: column;
   gap: 3px;
   white-space: nowrap;
+  cursor: pointer;
 }
+.context-cell:hover { background: var(--panel); }
+.context-cell.is-selected { background: rgba(255, 176, 58, 0.06); box-shadow: inset 0 -2px 0 var(--amber); }
 
 .context-spark { width: 100%; height: 20px; display: block; }
 .spark-line { stroke-width: 1.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
@@ -266,9 +269,9 @@ input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .watch-chg { font-size: 11px; min-width: 50px; text-align: right; }
 
 /* top-companies list specifics */
-.top-cap { margin-left: auto; font-size: 10px; color: var(--muted); }
+.top-meta { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.top-cap { font-size: 10px; color: var(--muted); }
 .top-add {
-  margin-left: 6px;
   background: none;
   border: 1px solid var(--hairline);
   color: var(--muted);
@@ -661,6 +664,119 @@ a.news-headline:hover { color: var(--amber); }
 }
 .cal-hint { color: var(--muted); font-size: 10px; margin: 0 0 4px; font-style: italic; }
 
+.cal-more {
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  width: 100%;
+}
+.cal-more:hover { border-color: var(--amber); color: var(--amber); }
+
+.cal-econ-title { margin-top: 18px; border-top: 1px solid var(--hairline); padding-top: 14px; }
+
+/* ---------- modal ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  width: min(440px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.modal-head .panel-title { margin: 0; }
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { overflow-y: auto; padding: 12px 14px; }
+
+/* earnings modal: month-grouped two-column card grid */
+.modal-earn { width: min(600px, 100%); }
+.earn-month { margin-bottom: 16px; }
+.earn-month:last-child { margin-bottom: 0; }
+.earn-month-head {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 5px;
+}
+.earn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.earn-card {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.earn-card.is-today { border-color: rgba(255, 176, 58, 0.55); }
+.earn-badge {
+  flex-shrink: 0;
+  width: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  border-radius: 5px;
+  background: rgba(255, 176, 58, 0.1);
+}
+.earn-badge-mon { font-size: 8px; letter-spacing: 0.1em; color: var(--amber); text-transform: uppercase; line-height: 1.3; }
+.earn-badge-day { font-size: 17px; font-weight: 700; line-height: 1; }
+.earn-card-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.earn-card-top { display: flex; align-items: center; gap: 6px; }
+.earn-session {
+  margin-left: auto;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.earn-card-name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .cal-rows { display: flex; flex-direction: column; gap: 6px; }
 
 .cal-row {
@@ -681,6 +797,18 @@ a.news-headline:hover { color: var(--amber); }
   border-color: rgba(255, 176, 58, 0.5) !important;
   font-weight: 700;
 }
+
+/* earnings rows: ticker + company name, then when */
+.cal-earn { display: flex; flex-direction: column; gap: 2px; }
+.cal-earn-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.earn-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-earn.is-today .earn-name { color: var(--amber); }
+.cal-earn-sub { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
 
 /* ---------- footer / toast ---------- */
 
