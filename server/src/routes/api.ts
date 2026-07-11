@@ -10,7 +10,7 @@ import type { CalendarEvent } from '../types';
 import { warn } from '../util/log';
 import { getSession } from '../util/session';
 
-const CHART_RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y'];
+const CHART_RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y', '10Y'];
 
 export function buildApi(hub: Hub, scanner: Scanner, router: Router, top: TopCompanies): ExpressRouter {
   const api = ExpressRouter();

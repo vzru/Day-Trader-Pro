@@ -425,6 +425,8 @@ input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 .grid-line { stroke: var(--hairline); stroke-width: 1; }
 .axis-label { fill: var(--muted); font-family: var(--mono); font-size: 9px; }
+.sep-line { stroke: var(--hairline); stroke-width: 1; opacity: 0.5; }
+.sep-label { fill: var(--muted); font-family: var(--mono); font-size: 8px; opacity: 0.8; }
 .open-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; }
 .open-label { fill: var(--muted); }
 

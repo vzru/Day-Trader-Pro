@@ -10,10 +10,10 @@ import { computeFactors, setupScore } from './score';
 import { exchangeOf, isCaSymbol, Router } from './router';
 import type { WatchlistStore } from './watchlist';
 
-/** Chart ranges the UI can request. 1D is intraday (1-min), 1W is hourly, rest daily. */
-export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y';
-const RANGE_LOOKBACK: Record<'6M' | '1Y' | '5Y', number> = {
-  '6M': 126, '1Y': 252, '5Y': 1260,
+/** Chart ranges the UI can request. 1D is intraday (1-min), 1W/1M use hourly, rest daily. */
+export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y' | '10Y';
+const RANGE_LOOKBACK: Record<'6M' | '1Y' | '5Y' | '10Y', number> = {
+  '6M': 126, '1Y': 252, '5Y': 1260, '10Y': 2520,
 };
 /** ~5 trading days of regular-hours hourly bars. */
 const WEEK_HOURLY_LOOKBACK = 40;

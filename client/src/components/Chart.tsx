@@ -6,7 +6,45 @@ const W = 760;
 const H = 240;
 const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
 
-const RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y'];
+const RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y', '10Y'];
+
+// Vertical separators: which time unit divides each range.
+type SepUnit = 'hour' | 'day' | 'month' | 'year';
+const SEPARATOR_UNIT: Record<ChartRange, SepUnit> = {
+  '1D': 'hour', '1W': 'day', '1M': 'day', '6M': 'month', '1Y': 'month', '5Y': 'year', '10Y': 'year',
+};
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const ET_PARTS_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false, weekday: 'short',
+});
+interface EtParts { year: string; month: string; day: string; hour: string }
+function etParts(ts: number): EtParts {
+  const o: Record<string, string> = {};
+  for (const p of ET_PARTS_FMT.formatToParts(ts)) o[p.type] = p.value;
+  return o as unknown as EtParts;
+}
+function isNewBucket(unit: SepUnit, cur: EtParts, prev: EtParts): boolean {
+  switch (unit) {
+    case 'hour': return cur.hour !== prev.hour || cur.day !== prev.day;
+    case 'day': return cur.day !== prev.day || cur.month !== prev.month || cur.year !== prev.year;
+    case 'month': return cur.month !== prev.month || cur.year !== prev.year;
+    case 'year': return cur.year !== prev.year;
+  }
+}
+function sepLabel(unit: SepUnit, cur: EtParts, prev: EtParts): string {
+  switch (unit) {
+    case 'hour': {
+      const h = Number(cur.hour);
+      return `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
+    }
+    // roll up to the parent unit when it changes: day -> month name, month -> year
+    case 'day': return cur.month !== prev.month ? MON[Number(cur.month) - 1] ?? '' : String(Number(cur.day));
+    case 'month': return cur.year !== prev.year ? cur.year : MON[Number(cur.month) - 1] ?? '';
+    case 'year': return cur.year;
+  }
+}
 
 /** Running session VWAP per bar (mirrors the server's calculation). */
 function vwapSeries(bars: Bar[]): (number | null)[] {
@@ -45,8 +83,14 @@ export default function Chart({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const isIntraday = range === '1D';
-  const longRange = range === '1Y' || range === '5Y';
-  const axisLabel = (t: number) => (isIntraday ? fmtEtTime(t) : fmtDate(t, longRange));
+  const longRange = range === '1Y' || range === '5Y' || range === '10Y';
+  // Hover timestamp: intraday ranges (1D/1W/1M) include the time of day.
+  const hoverStamp = (t: number) =>
+    range === '1D'
+      ? fmtEtTime(t)
+      : range === '1W' || range === '1M'
+        ? `${fmtDate(t, false)} ${fmtEtTime(t)}`
+        : fmtDate(t, longRange);
 
   const model = useMemo(() => {
     if (bars.length < 2) return null;
@@ -72,6 +116,20 @@ export default function Chart({
     const ticks = [0, 1, 2, 3].map((i) => min + ((max - min) * (i + 0.5)) / 4);
     return { closes, vw, min, max, x, y, pricePts, vwapPts, ticks };
   }, [bars, open, isIntraday]);
+
+  // Indices where a new time unit begins → vertical separators with labels.
+  const separators = useMemo(() => {
+    const out: { i: number; label: string }[] = [];
+    if (bars.length < 2) return out;
+    const unit = SEPARATOR_UNIT[range];
+    let prev = etParts(bars[0].t);
+    for (let i = 1; i < bars.length; i++) {
+      const cur = etParts(bars[i].t);
+      if (isNewBucket(unit, cur, prev)) out.push({ i, label: sepLabel(unit, cur, prev) });
+      prev = cur;
+    }
+    return out;
+  }, [bars, range]);
 
   const toolbar = (
     <div className="chart-toolbar" role="group" aria-label="Chart time range">
@@ -144,6 +202,22 @@ export default function Chart({
           </g>
         ))}
 
+        {/* vertical time separators + labels (skip labels that would collide with the edge labels) */}
+        {separators.map((s) => {
+          const sx = model.x(s.i);
+          const showLabel = sx > PAD.left + 8 && sx < W - PAD.right - 8;
+          return (
+            <g key={`sep-${s.i}`}>
+              <line className="sep-line" x1={sx} x2={sx} y1={PAD.top} y2={H - PAD.bottom} />
+              {showLabel && (
+                <text className="sep-label" x={sx} y={H - 6} textAnchor="middle">
+                  {s.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
         {/* open-price reference line (intraday only) */}
         {showOpenLine && open != null && (
           <g>
@@ -167,12 +241,6 @@ export default function Chart({
           </text>
         )}
 
-        {/* time/date axis: first and last bar */}
-        <text className="axis-label" x={PAD.left} y={H - 6}>{axisLabel(bars[0].t)}</text>
-        <text className="axis-label" x={W - PAD.right} y={H - 6} textAnchor="end">
-          {axisLabel(bars[bars.length - 1].t)}
-        </text>
-
         {/* hover crosshair + tooltip */}
         {hover && hoverIdx != null && (
           <g className="hover-layer">
@@ -180,7 +248,7 @@ export default function Chart({
             <circle className={`hover-dot ${dirClass}`} cx={model.x(hoverIdx)} cy={model.y(hover.c)} r={3.5} />
             <g transform={`translate(${tooltipLeft ? model.x(hoverIdx) + 10 : model.x(hoverIdx) - 150}, ${PAD.top + 4})`}>
               <rect className="tooltip-box" width={140} height={hoverVwap != null ? 52 : 38} rx={4} />
-              <text className="tooltip-text" x={8} y={15}>{isIntraday ? fmtEtTime(hover.t) : fmtDate(hover.t, longRange)}</text>
+              <text className="tooltip-text" x={8} y={15}>{hoverStamp(hover.t)}</text>
               <text className="tooltip-text strong" x={8} y={31}>PX {fmtPrice(hover.c, symbol)}</text>
               {hoverVwap != null && (
                 <text className="tooltip-text" x={8} y={46}>VWAP {fmtPrice(hoverVwap, symbol)}</text>
