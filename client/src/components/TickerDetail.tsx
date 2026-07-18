@@ -5,6 +5,7 @@ import { brandName, chgClass, fmtCap, fmtCompact, fmtPct, fmtPrice, fmtRatio } f
 import type { Bar, ChartRange, TickerDetail as Detail } from '../types';
 import Chart from './Chart';
 import FactorGrid from './FactorGrid';
+import ScoreSparkline from './ScoreSparkline';
 import SetupScoreBar from './SetupScoreBar';
 
 export default function TickerDetail({
@@ -12,11 +13,13 @@ export default function TickerDetail({
   detail,
   tick,
   bars,
+  onLog,
 }: {
   symbol: string | null;
   detail: Detail | null;
   tick: TickMap[string] | undefined;
   bars: Bar[];
+  onLog: (symbol: string, note: string) => Promise<boolean>;
 }) {
   // Chart range lives here (not in <Chart>) so it persists as the user switches
   // stocks, and so the header % can reflect the selected timeframe's growth.
@@ -24,6 +27,20 @@ export default function TickerDetail({
   const [hist, setHist] = useState<Bar[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(false);
+  const [note, setNote] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [logging, setLogging] = useState(false);
+
+  const submitLog = async () => {
+    if (!symbol || logging) return;
+    setLogging(true);
+    const ok = await onLog(symbol, note.trim());
+    setLogging(false);
+    if (ok) {
+      setNote('');
+      setNoteOpen(false);
+    }
+  };
 
   useEffect(() => {
     if (!symbol || range === '1D') {
@@ -99,6 +116,11 @@ export default function TickerDetail({
               {q.source}
             </span>
           )}
+          {detail?.haltRisk && (
+            <span className="chip chip-halt" title="Fast move / thin liquidity — possible LULD halt territory (heuristic)">
+              ⚠ HALT RISK
+            </span>
+          )}
         </div>
         <div className="detail-price">
           <span className={`big-price ${chgClass(q?.changePct)}`}>{fmtPrice(q?.price ?? null, symbol)}</span>
@@ -143,7 +165,42 @@ export default function TickerDetail({
         <>
           <h3 className="sub-title">SETUP FACTORS</h3>
           <FactorGrid factors={detail.factors} />
-          <h3 className="sub-title">SETUP SCORE</h3>
+          <div className="score-head">
+            <h3 className="sub-title">SETUP SCORE</h3>
+            {detail.scoreHist.length >= 2 && (
+              <span className="score-trend" title="Score over the recent past — building or fading?">
+                <ScoreSparkline points={detail.scoreHist} width={90} height={20} />
+              </span>
+            )}
+            <span className="log-controls">
+              {noteOpen && (
+                <input
+                  className="log-note"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && void submitLog()}
+                  placeholder="Why is this interesting? (optional)"
+                  maxLength={200}
+                  aria-label="Journal note"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+              )}
+              <button
+                className="log-btn"
+                disabled={logging}
+                onClick={() => (noteOpen ? void submitLog() : setNoteOpen(true))}
+                title="Snapshot this setup (price, score, factors) to the journal"
+              >
+                {logging ? 'LOGGING…' : noteOpen ? 'SAVE' : 'LOG THIS'}
+              </button>
+              {noteOpen && !logging && (
+                <button className="log-btn log-cancel" onClick={() => { setNoteOpen(false); setNote(''); }}>
+                  ✕
+                </button>
+              )}
+            </span>
+          </div>
           <SetupScoreBar setup={detail.setup} />
         </>
       ) : (

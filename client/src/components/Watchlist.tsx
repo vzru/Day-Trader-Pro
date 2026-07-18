@@ -63,6 +63,9 @@ export default function Watchlist({
               <div className="watch-top">
                 <span className="watch-symbol">{row.symbol}</span>
                 <span className="watch-exch">{row.exchange}</span>
+                {row.haltRisk && (
+                  <span className="halt-dot" title="Fast move / thin liquidity — possible halt territory (heuristic)">⚠</span>
+                )}
                 <span className="watch-price">{fmtPrice(price, row.symbol)}</span>
                 <span className={`watch-chg ${chgClass(chg)}`}>{fmtPct(chg)}</span>
                 <button

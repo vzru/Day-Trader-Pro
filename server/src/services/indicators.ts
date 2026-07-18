@@ -80,3 +80,19 @@ export function rangePct(high: number | null, low: number | null, price: number 
 }
 
 export const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
+
+/**
+ * Halt-risk heuristic (free feeds carry no LULD halt flag): a stock moving
+ * ~5%+ inside 5 minutes is inside typical LULD band territory, and a
+ * blown-out spread on a double-digit day says liquidity is evaporating.
+ * A true proxy only — surfaced as a warning, never as a fact.
+ */
+export function haltRisk(
+  move5mPct: number | null,
+  spreadPctVal: number | null,
+  changePct: number | null,
+): boolean {
+  if (move5mPct != null && Math.abs(move5mPct) >= 5) return true;
+  if (spreadPctVal != null && changePct != null && spreadPctVal >= 1.5 && Math.abs(changePct) >= 10) return true;
+  return false;
+}

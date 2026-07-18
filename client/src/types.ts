@@ -47,6 +47,7 @@ export interface Fundamentals {
   avgVolume30d?: number | null;
   peRatio?: number | null;
   dividendYield?: number | null; // percent
+  sector?: string | null;
 }
 
 export interface NewsItem {
@@ -85,6 +86,8 @@ export interface TickerDetail {
   factors: Factor[];
   setup: SetupScore;
   fundamentals: Fundamentals | null;
+  scoreHist: number[];
+  haltRisk: boolean;
 }
 
 export interface WatchRow {
@@ -95,6 +98,7 @@ export interface WatchRow {
   relVol: number | null;
   source: string;
   delayed: boolean;
+  haltRisk?: boolean;
 }
 
 export interface TopRow {
@@ -120,6 +124,74 @@ export interface ScannerResult {
   topFactors: { label: string; display: string }[];
   source: string;
   delayed: boolean;
+  scoreHist: number[];
+  haltRisk: boolean;
+  sector?: string | null;
+}
+
+export type ScannerMode = 'regular' | 'premarket';
+
+// ---- alerts ----
+
+export type AlertScope = 'all' | 'watchlist' | 'top25' | 'off';
+export type AlertKind = 'score' | 'relvol' | 'gap' | 'halt';
+
+export interface AlertItem {
+  id: string;
+  ts: number;
+  symbol: string;
+  kind: AlertKind;
+  message: string;
+}
+
+export interface AlertSettings {
+  scope: AlertScope;
+}
+
+// ---- sector strip ----
+
+export interface SectorRow {
+  symbol: string;
+  name: string;
+  price: number | null;
+  changePct: number | null;
+}
+
+// ---- journal ----
+
+export interface JournalOutcome {
+  date: string;
+  close: number | null;
+  closePct: number | null;
+}
+
+export interface JournalEntry {
+  id: string;
+  ts: number;
+  symbol: string;
+  note: string;
+  price: number | null;
+  score: number;
+  grade: string;
+  factors: { label: string; display: string; status: FactorStatus }[];
+  outcome?: JournalOutcome | null;
+}
+
+// ---- backtest (score honesty report) ----
+
+export interface BacktestBucket {
+  label: string;
+  count: number;
+  avgAbsMovePct: number | null;
+  avgRangePct: number | null;
+  bigMoveShare: number | null;
+}
+
+export interface BacktestReport {
+  buckets: BacktestBucket[];
+  samples: number;
+  days: number;
+  pendingToday: number;
 }
 
 export interface SessionInfo {
@@ -156,6 +228,7 @@ export interface ScannerState {
   universeSize: number;
   eligible: number;
   updatedAt: number;
+  mode: ScannerMode;
 }
 
 export type ServerMessage =
@@ -169,6 +242,8 @@ export type ServerMessage =
   | { type: 'top'; rows: TopRow[] }
   | { type: 'earnings'; events: CalendarEvent[] }
   | ({ type: 'scanner' } & ScannerState)
+  | { type: 'alerts'; items: AlertItem[]; settings: AlertSettings }
+  | { type: 'sectors'; rows: SectorRow[] }
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };
 

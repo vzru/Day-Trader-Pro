@@ -5,3 +5,6 @@ dist/
 .DS_Store
 # runtime-generated user data (defaults are versioned)
 server/data/watchlist.json
+server/data/settings.json
+server/data/journal.json
+server/data/backtest.json

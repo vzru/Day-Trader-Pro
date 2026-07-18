@@ -251,7 +251,7 @@ export class YahooSource implements DataSource {
           await this.gate();
           const qs = await yahooFinance.quoteSummary(
             symbol,
-            { modules: ['defaultKeyStatistics', 'summaryDetail'] },
+            { modules: ['defaultKeyStatistics', 'summaryDetail', 'assetProfile'] },
             FETCH_OPTS,
           );
           const ks = qs.defaultKeyStatistics;
@@ -264,6 +264,7 @@ export class YahooSource implements DataSource {
               floatShares: ks?.floatShares ?? base.floatShares ?? null,
               shortPctFloat:
                 ks?.shortPercentOfFloat != null ? ks.shortPercentOfFloat * 100 : base.shortPctFloat ?? null,
+              sector: qs.assetProfile?.sector ?? base.sector ?? null,
             },
           });
           this.noteSuccess();

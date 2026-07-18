@@ -47,6 +47,13 @@ export function etDateStr(ts: number): string {
   return ET_DATE_FMT.format(new Date(ts));
 }
 
+/** Minutes since midnight, Eastern Time. */
+export function etMinutes(now = new Date()): number {
+  const parts = ET_FMT.formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
+  return (Number(get('hour')) % 24) * 60 + Number(get('minute'));
+}
+
 /**
  * Fraction of the regular session (9:30-16:00 ET) elapsed, clamped to
  * [0.05, 1]. Used to pace "expected volume so far" for relative volume.

@@ -51,6 +51,8 @@ export interface Fundamentals {
   avgVolume30d?: number | null;
   peRatio?: number | null; // trailing P/E
   dividendYield?: number | null; // percent, e.g. 0.65
+  /** GICS-style sector name, e.g. "Technology" (Yahoo assetProfile). */
+  sector?: string | null;
 }
 
 export interface NewsItem {
@@ -93,6 +95,10 @@ export interface TickerDetail {
   factors: Factor[];
   setup: SetupScore;
   fundamentals: Fundamentals | null;
+  /** Recent setup-score points (oldest → newest) for the trend sparkline. */
+  scoreHist: number[];
+  /** Heuristic: fast move / blown-out spread → likely LULD halt territory. */
+  haltRisk: boolean;
 }
 
 export interface WatchRow {
@@ -103,6 +109,7 @@ export interface WatchRow {
   relVol: number | null;
   source: string;
   delayed: boolean;
+  haltRisk?: boolean;
 }
 
 /** One row of the market-cap-ranked "Top US companies" list. */
@@ -130,7 +137,14 @@ export interface ScannerResult {
   topFactors: { label: string; display: string }[];
   source: string;
   delayed: boolean;
+  /** Recent scan-score points (oldest → newest) for the trend sparkline. */
+  scoreHist: number[];
+  haltRisk: boolean;
+  sector?: string | null;
 }
+
+/** In pre-market (4:00–9:30 ET) the scanner ranks by overnight gap instead. */
+export type ScannerMode = 'regular' | 'premarket';
 
 export interface SessionInfo {
   state: 'pre' | 'regular' | 'after' | 'closed';
@@ -162,6 +176,78 @@ export interface CalendarEvent {
   name?: string;
 }
 
+// ---- alerts ----
+
+/** Which symbols the alert engine watches. */
+export type AlertScope = 'all' | 'watchlist' | 'top25' | 'off';
+
+export type AlertKind = 'score' | 'relvol' | 'gap' | 'halt';
+
+export interface AlertItem {
+  id: string;
+  ts: number;
+  symbol: string;
+  kind: AlertKind;
+  message: string;
+}
+
+export interface AlertSettings {
+  scope: AlertScope;
+}
+
+// ---- sector strip ----
+
+export interface SectorRow {
+  /** SPDR sector ETF used as the proxy, e.g. XLK. */
+  symbol: string;
+  name: string;
+  price: number | null;
+  changePct: number | null;
+}
+
+// ---- journal ----
+
+export interface JournalOutcome {
+  /** ET date the outcome refers to (the entry's day). */
+  date: string;
+  close: number | null;
+  /** % change from the logged price to that day's close. */
+  closePct: number | null;
+}
+
+export interface JournalEntry {
+  id: string;
+  ts: number;
+  symbol: string;
+  note: string;
+  price: number | null;
+  score: number;
+  grade: string;
+  factors: { label: string; display: string; status: FactorStatus }[];
+  /** Filled in once the entry's trading day has closed; null = unresolvable. */
+  outcome?: JournalOutcome | null;
+}
+
+// ---- backtest (score honesty report) ----
+
+export interface BacktestBucket {
+  label: string; // e.g. "80–100 (A)"
+  count: number;
+  /** Average |close vs morning price| %, i.e. how much high scorers moved. */
+  avgAbsMovePct: number | null;
+  /** Average intraday (high-low)/price % of the captured day. */
+  avgRangePct: number | null;
+  /** Share of samples that moved more than ±2% after capture. */
+  bigMoveShare: number | null;
+}
+
+export interface BacktestReport {
+  buckets: BacktestBucket[];
+  samples: number;
+  days: number;
+  pendingToday: number;
+}
+
 // ---- websocket protocol (server -> client) ----
 
 export type ServerMessage =
@@ -174,7 +260,9 @@ export type ServerMessage =
   | { type: 'watchlist'; rows: WatchRow[] }
   | { type: 'top'; rows: TopRow[] }
   | { type: 'earnings'; events: CalendarEvent[] }
-  | { type: 'scanner'; results: ScannerResult[]; universeSize: number; eligible: number; updatedAt: number }
+  | { type: 'scanner'; results: ScannerResult[]; universeSize: number; eligible: number; updatedAt: number; mode: ScannerMode }
+  | { type: 'alerts'; items: AlertItem[]; settings: AlertSettings }
+  | { type: 'sectors'; rows: SectorRow[] }
   | { type: 'news'; items: NewsItem[] }
   | { type: 'error'; message: string };
 

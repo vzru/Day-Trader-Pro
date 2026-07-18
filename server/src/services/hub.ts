@@ -5,7 +5,8 @@ import type {
 } from '../types';
 import { error, log, warn } from '../util/log';
 import { etDateStr, getSession, sessionElapsedFraction } from '../util/session';
-import { gapPct, rangePct, relativeVolume, rsi14, spreadPct, vwap } from './indicators';
+import { gapPct, haltRisk, rangePct, relativeVolume, rsi14, spreadPct, vwap } from './indicators';
+import { scoreHistory } from './history';
 import { computeFactors, setupScore } from './score';
 import { exchangeOf, isCaSymbol, Router } from './router';
 import type { WatchlistStore } from './watchlist';
@@ -282,6 +283,20 @@ export class Hub {
     return relativeVolume(q?.volume ?? null, this.avgVol.get(symbol) ?? null, sessionElapsedFraction());
   }
 
+  /** % move over the last ~5 minutes from the live 1-min bar buffer. */
+  private move5m(symbol: string): number | null {
+    const bars = this.bars.get(symbol) ?? [];
+    if (bars.length < 6) return null;
+    const then = bars[bars.length - 6].c;
+    const nowC = bars[bars.length - 1].c;
+    return then > 0 ? ((nowC - then) / then) * 100 : null;
+  }
+
+  private haltRiskFor(symbol: string): boolean {
+    const q = this.quotes.get(symbol);
+    return haltRisk(this.move5m(symbol), spreadPct(q?.bid ?? null, q?.ask ?? null), q?.changePct ?? null);
+  }
+
   // ---- selection / detail ----
 
   async select(symbolRaw: string): Promise<void> {
@@ -333,7 +348,13 @@ export class Hub {
       newsAvailable: config.newsFeed !== 'off',
     });
 
-    return { symbol, quote, vwap: vw, spreadPct: spread, factors, setup: setupScore(factors), fundamentals: f };
+    const setup = setupScore(factors);
+    scoreHistory.record('setup', symbol, setup.score);
+    return {
+      symbol, quote, vwap: vw, spreadPct: spread, factors, setup, fundamentals: f,
+      scoreHist: scoreHistory.points('setup', symbol),
+      haltRisk: this.haltRiskFor(symbol),
+    };
   }
 
   // ---- watchlist ----
@@ -349,6 +370,7 @@ export class Hub {
         relVol: this.relVolFor(symbol),
         source: q?.source ?? '—',
         delayed: q?.delayed ?? false,
+        haltRisk: this.haltRiskFor(symbol),
       };
     });
   }

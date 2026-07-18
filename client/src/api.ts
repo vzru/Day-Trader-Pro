@@ -1,4 +1,7 @@
-import type { Bar, CalendarEvent, ChartRange, NewsItem, TopRow, WatchRow } from './types';
+import type {
+  AlertItem, AlertScope, AlertSettings, BacktestReport, Bar, CalendarEvent, ChartRange,
+  JournalEntry, NewsItem, TopRow, WatchRow,
+} from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -29,4 +32,19 @@ export const api = {
   getContext: () =>
     request<{ series: { symbol: string; points: number[] }[] }>('/api/context'),
   getTop: () => request<{ rows: TopRow[] }>('/api/top'),
+  getAlerts: () => request<{ items: AlertItem[]; settings: AlertSettings }>('/api/alerts'),
+  setAlertScope: (scope: AlertScope) =>
+    request<{ ok: boolean; settings: AlertSettings }>('/api/alerts/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ scope }),
+    }),
+  getJournal: () => request<{ entries: JournalEntry[] }>('/api/journal'),
+  addJournal: (symbol: string, note: string) =>
+    request<{ ok: boolean; entry: JournalEntry }>('/api/journal', {
+      method: 'POST',
+      body: JSON.stringify({ symbol, note }),
+    }),
+  removeJournal: (id: string) =>
+    request<{ ok: boolean }>(`/api/journal/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getBacktest: () => request<BacktestReport>('/api/backtest'),
 };

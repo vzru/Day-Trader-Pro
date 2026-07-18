@@ -6,9 +6,14 @@ import express from 'express';
 import { config } from './config';
 import { Push } from './push';
 import { buildApi } from './routes/api';
+import { AlertEngine } from './services/alerts';
+import { Backtest } from './services/backtest';
 import { Hub } from './services/hub';
+import { JournalStore } from './services/journal';
 import { Router } from './services/router';
 import { Scanner } from './services/scanner';
+import { Sectors } from './services/sectors';
+import { SettingsStore } from './services/settings';
 import { TopCompanies } from './services/topCompanies';
 import { WatchlistStore } from './services/watchlist';
 import { error, log } from './util/log';
@@ -23,10 +28,17 @@ async function main(): Promise<void> {
   const hub = new Hub(router, watchlist);
   const scanner = new Scanner(router);
   const top = new TopCompanies(router);
+  const settings = new SettingsStore();
+  const alerts = new AlertEngine(router, watchlist, () => top.symbols(), scanner, settings);
+  const journal = new JournalStore(router);
+  const backtest = new Backtest(router);
+  const sectors = new Sectors(router);
+  // Each scan feeds the honesty report's morning capture.
+  scanner.onScan = (rows, mode) => backtest.onScan(rows, mode);
 
   const app = express();
   app.use(express.json());
-  app.use('/api', buildApi(hub, scanner, router, top));
+  app.use('/api', buildApi(hub, scanner, router, top, { alerts, journal, backtest, sectors, settings }));
 
   // Serve the built client if it exists (production convenience; in dev the
   // Vite server at :5173 proxies /api and /ws here instead).
@@ -46,7 +58,7 @@ async function main(): Promise<void> {
   const server = http.createServer(app);
   const push = new Push(
     server,
-    () => [...hub.snapshotMessages(), top.message()],
+    () => [...hub.snapshotMessages(), top.message(), scanner.message(), sectors.message(), alerts.message()],
     (msg) => {
       if (msg.type === 'select') void hub.select(msg.symbol);
     },
@@ -54,6 +66,8 @@ async function main(): Promise<void> {
   hub.broadcast = (msg) => push.broadcast(msg);
   scanner.broadcast = (msg) => push.broadcast(msg);
   top.broadcast = (msg) => push.broadcast(msg);
+  sectors.broadcast = (msg) => push.broadcast(msg);
+  alerts.broadcast = (msg) => push.broadcast(msg);
   // Earnings cover the Top-25 too: let the hub read the live top names, and
   // re-pull earnings whenever that list refreshes.
   hub.topSymbols = () => top.symbols();
@@ -70,6 +84,9 @@ async function main(): Promise<void> {
   // Top-25 is on-screen, so give it the Yahoo feed before the background scanner.
   void top.start();
   void scanner.start();
+  void sectors.start();
+  alerts.start();
+  backtest.start();
 }
 
 main().catch((e) => {
