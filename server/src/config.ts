@@ -47,7 +47,11 @@ function build(): AppConfig {
     usFeed,
     caFeed,
     newsFeed,
-    dataDir: path.resolve(here, '../data'),
+    // User data (watchlist / settings / journal / backtest) lives here. Override
+    // with DTP_DATA_DIR to point throwaway instances (smoke tests, experiments)
+    // at a scratch directory so they can never read, write, or delete the real
+    // files in server/data.
+    dataDir: process.env.DTP_DATA_DIR?.trim() || path.resolve(here, '../data'),
   };
 }
 

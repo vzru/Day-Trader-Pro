@@ -78,6 +78,7 @@ async function main(): Promise<void> {
   server.listen(config.port, () => {
     log('server', `Day Trader Pro backend on http://localhost:${config.port}`);
     log('server', `feeds: us=${config.usFeed} ca=${config.caFeed} news=${config.newsFeed}${config.forceSim ? ' (FORCE_SIM)' : ''}`);
+    log('server', `data dir: ${config.dataDir}`);
   });
 
   await hub.start();
