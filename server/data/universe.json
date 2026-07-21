@@ -23,7 +23,7 @@
   { "symbol": "SHAK", "name": "Shake Shack", "exchange": "US" },
   { "symbol": "EAT", "name": "Brinker International", "exchange": "US" },
   { "symbol": "FIVE", "name": "Five Below", "exchange": "US" },
-  { "symbol": "GPS", "name": "Gap Inc", "exchange": "US" },
+  { "symbol": "GAP", "name": "Gap Inc", "exchange": "US" },
   { "symbol": "ANF", "name": "Abercrombie & Fitch", "exchange": "US" },
   { "symbol": "AEO", "name": "American Eagle Outfitters", "exchange": "US" },
   { "symbol": "URBN", "name": "Urban Outfitters", "exchange": "US" },

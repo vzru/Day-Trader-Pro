@@ -38,6 +38,19 @@ const FETCH_OPTS = { fetchOptions: { headers: { 'User-Agent': BROWSER_UA } } } a
 const YAHOO_ALIAS: Record<string, string> = { 'BRK.B': 'BRK-B', 'BRK.A': 'BRK-A', 'BF.B': 'BF-B' };
 const toYahoo = (s: string): string => YAHOO_ALIAS[s] ?? s;
 
+/**
+ * Dividend yield as a percent, resilient to Yahoo's inconsistent fields.
+ * `dividendYield` is already a percent and is correct even for ADRs (e.g. SONY
+ * 0.75). `trailingAnnualDividendYield` is a fraction for US names (AAPL 0.0031)
+ * but mis-scaled for some ADRs — a fallback only. Yields above ~50% are a data
+ * error (no equity pays that), so they're dropped rather than shown.
+ */
+function dividendYieldPct(divPct: number | null, divFrac: number | null): number | null {
+  const pct = divPct != null ? divPct : divFrac != null ? divFrac * 100 : null;
+  if (pct == null || pct < 0 || pct > 50) return null;
+  return pct;
+}
+
 interface QuoteCacheEntry {
   quote: Quote;
   fetchedAt: number;
@@ -130,8 +143,6 @@ export class YahooSource implements DataSource {
       return typeof v === 'number' && isFinite(v) ? v : null;
     };
     const existing = this.fundCache.get(symbol)?.fund;
-    // Yahoo gives the trailing dividend yield as a fraction (0.0065) — store as percent.
-    const divFrac = num('trailingAnnualDividendYield');
     this.fundCache.set(symbol, {
       fetchedAt: this.fundCache.get(symbol)?.fetchedAt ?? 0,
       fund: {
@@ -144,7 +155,7 @@ export class YahooSource implements DataSource {
         floatShares: existing?.floatShares ?? null,
         shortPctFloat: existing?.shortPctFloat ?? null,
         peRatio: num('trailingPE') ?? existing?.peRatio ?? null,
-        dividendYield: divFrac != null ? divFrac * 100 : existing?.dividendYield ?? null,
+        dividendYield: dividendYieldPct(num('dividendYield'), num('trailingAnnualDividendYield')) ?? existing?.dividendYield ?? null,
       },
     });
   }

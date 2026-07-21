@@ -150,6 +150,13 @@ export class Scanner {
         const entry = this.eligible.find((e) => e.symbol === q.symbol);
         if (!entry) continue;
         const f = this.funds.get(q.symbol);
+        // Guard against renamed/delisted tickers: a $5B+ scanner must only rank
+        // symbols with a CONFIRMED in-band market cap. Some dead tickers (e.g.
+        // GPS after the Gap "GAP" rename) still return a live aliased snapshot
+        // but have lost their fundamentals — skip anything whose cap we can't
+        // verify rather than surface a $5B+ result that isn't one.
+        const cap = f?.marketCap;
+        if (cap == null || cap < CAP_MIN || cap > CAP_MAX) continue;
         const gap = pre ? gapPct(q.price, q.prevClose) : gapPct(q.open, q.prevClose);
         const relVol = relativeVolume(q.volume, f?.avgVolume30d ?? null, elapsed);
         const spread = spreadPct(q.bid, q.ask);
