@@ -15,7 +15,7 @@ import type { CalendarEvent } from '../types';
 import { warn } from '../util/log';
 import { getSession } from '../util/session';
 
-const CHART_RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y', '10Y'];
+const CHART_RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '2Y', '3Y', '5Y', '10Y'];
 
 export interface ApiServices {
   alerts: AlertEngine;

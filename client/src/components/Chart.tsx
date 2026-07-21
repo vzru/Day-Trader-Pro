@@ -6,12 +6,13 @@ const W = 760;
 const H = 240;
 const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
 
-const RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '5Y', '10Y'];
+const RANGES: ChartRange[] = ['1D', '1W', '1M', '6M', '1Y', '2Y', '3Y', '5Y', '10Y'];
 
 // Vertical separators: which time unit divides each range.
 type SepUnit = 'hour' | 'day' | 'month' | 'year';
 const SEPARATOR_UNIT: Record<ChartRange, SepUnit> = {
-  '1D': 'hour', '1W': 'day', '1M': 'day', '6M': 'month', '1Y': 'month', '5Y': 'year', '10Y': 'year',
+  '1D': 'hour', '1W': 'day', '1M': 'day', '6M': 'month', '1Y': 'month',
+  '2Y': 'year', '3Y': 'year', '5Y': 'year', '10Y': 'year',
 };
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -60,6 +61,31 @@ function vwapSeries(bars: Bar[]): (number | null)[] {
   return out;
 }
 
+/**
+ * Centered moving average over closes: each point averages bars on BOTH sides
+ * (window [i-half, i+half]), so the line has no trailing-average lag and sits
+ * on top of the price trend rather than shifted to the right. The window
+ * shrinks toward the edges so the line still spans the full chart. O(n) via a
+ * prefix-sum.
+ */
+function trendAverage(closes: number[], period: number): number[] {
+  const half = Math.floor(period / 2);
+  const prefix = [0];
+  for (let i = 0; i < closes.length; i++) prefix.push(prefix[i] + closes[i]);
+  const out: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(closes.length - 1, i + half);
+    out.push((prefix[hi + 1] - prefix[lo]) / (hi - lo + 1));
+  }
+  return out;
+}
+
+/** Smoothing window for the trend line: ~1/6 of the visible bars, min 3. */
+function trendPeriod(barCount: number): number {
+  return Math.max(3, Math.round(barCount / 6));
+}
+
 export default function Chart({
   bars,
   range,
@@ -69,6 +95,7 @@ export default function Chart({
   open,
   prevClose,
   symbol,
+  showTrend = false,
 }: {
   bars: Bar[];
   range: ChartRange;
@@ -78,12 +105,18 @@ export default function Chart({
   open: number | null;
   prevClose: number | null;
   symbol: string;
+  showTrend?: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const isIntraday = range === '1D';
-  const longRange = range === '1Y' || range === '5Y' || range === '10Y';
+  const longRange = range === '1Y' || range === '2Y' || range === '3Y' || range === '5Y' || range === '10Y';
+  // Stale-data guard: on a non-intraday range, a most-recent bar that's weeks
+  // old means the symbol likely stopped trading under this ticker (delisted or
+  // renamed, e.g. GPS -> GAP). 10 days clears normal weekend/holiday gaps.
+  const lastBarT = bars.length ? bars[bars.length - 1].t : null;
+  const stale = !isIntraday && lastBarT != null && Date.now() - lastBarT > 10 * 86_400_000;
   // Hover timestamp: intraday ranges (1D/1W/1M) include the time of day.
   const hoverStamp = (t: number) =>
     range === '1D'
@@ -113,9 +146,19 @@ export default function Chart({
       .filter(Boolean)
       .join(' ');
 
+    // Moving-average trend line for non-intraday ranges (1W and longer). It's
+    // an average of closes, so it always sits inside the price domain above.
+    let trendPts = '';
+    let lastTrend: number | null = null;
+    if (showTrend && !isIntraday && bars.length >= 4) {
+      const trend = trendAverage(closes, trendPeriod(bars.length));
+      trendPts = trend.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+      lastTrend = trend[trend.length - 1];
+    }
+
     const ticks = [0, 1, 2, 3].map((i) => min + ((max - min) * (i + 0.5)) / 4);
-    return { closes, vw, min, max, x, y, pricePts, vwapPts, ticks };
-  }, [bars, open, isIntraday]);
+    return { closes, vw, min, max, x, y, pricePts, vwapPts, trendPts, lastTrend, ticks };
+  }, [bars, open, isIntraday, showTrend]);
 
   // Indices where a new time unit begins → vertical separators with labels.
   const separators = useMemo(() => {
@@ -184,6 +227,11 @@ export default function Chart({
   return (
     <div className="chart">
       {toolbar}
+      {stale && lastBarT != null && (
+        <div className="chart-stale" role="note">
+          ⚠ Latest data {fmtDate(lastBarT, true)} — this symbol may be delisted or renamed (no recent trading).
+        </div>
+      )}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -229,6 +277,9 @@ export default function Chart({
         )}
 
         {isIntraday && <polyline className="vwap-line" points={model.vwapPts} fill="none" />}
+        {!isIntraday && model.trendPts && (
+          <polyline className="trend-line" points={model.trendPts} fill="none" />
+        )}
         <polyline className={`price-line ${dirClass}`} points={model.pricePts} fill="none" />
 
         {/* direct labels at line ends (identity is never color-alone) */}
@@ -238,6 +289,11 @@ export default function Chart({
         {isIntraday && lastVwap != null && (
           <text className="series-label vwap" x={W - PAD.right + 6} y={model.y(lastVwap) + 12}>
             VWAP
+          </text>
+        )}
+        {!isIntraday && model.lastTrend != null && (
+          <text className="series-label trend" x={W - PAD.right + 6} y={model.y(model.lastTrend) + 12}>
+            TREND
           </text>
         )}
 

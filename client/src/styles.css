@@ -1059,3 +1059,30 @@ a.news-headline:hover { color: var(--amber); }
 .honesty-table th:first-child, .honesty-table td:first-child { text-align: left; }
 .honesty-table td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--hairline); }
 .honesty-table tr.is-empty td { color: var(--muted); opacity: 0.6; }
+
+/* ---------- chart trend line ---------- */
+
+.trend-line {
+  stroke: #7AA2F7;
+  stroke-width: 1.5;
+  opacity: 0.9;
+  fill: none;
+}
+.series-label.trend { fill: #7AA2F7; }
+
+.log-btn.is-active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* ---------- chart stale-data note ---------- */
+
+.chart-stale {
+  font-size: 11px;
+  color: var(--amber);
+  background: rgba(255, 176, 58, 0.08);
+  border: 1px solid rgba(255, 176, 58, 0.35);
+  border-radius: 4px;
+  padding: 5px 10px;
+  margin: 6px 0 2px;
+}

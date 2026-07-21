@@ -12,10 +12,19 @@ import { exchangeOf, isCaSymbol, Router } from './router';
 import type { WatchlistStore } from './watchlist';
 
 /** Chart ranges the UI can request. 1D is intraday (1-min), 1W/1M use hourly, rest daily. */
-export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y' | '10Y';
-const RANGE_LOOKBACK: Record<'6M' | '1Y' | '5Y' | '10Y', number> = {
-  '6M': 126, '1Y': 252, '5Y': 1260, '10Y': 2520,
+export type ChartRange = '1D' | '1W' | '1M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y' | '10Y';
+const RANGE_LOOKBACK: Record<'6M' | '1Y' | '2Y' | '3Y' | '5Y' | '10Y', number> = {
+  '6M': 126, '1Y': 252, '2Y': 504, '3Y': 756, '5Y': 1260, '10Y': 2520,
 };
+// How long a fetched range's bars stay fresh. Intraday-derived ranges move
+// every hour; daily ranges only gain a bar after the close, so they can cache
+// much longer. 1D is served from the live buffer and never cached here.
+const RANGE_TTL_MS: Record<ChartRange, number> = {
+  '1D': 0, '1W': 120_000, '1M': 120_000, '6M': 600_000, '1Y': 600_000,
+  '2Y': 1_800_000, '3Y': 1_800_000, '5Y': 1_800_000, '10Y': 1_800_000,
+};
+/** Cap the historical-bars cache so long sessions can't grow it unbounded. */
+const RANGE_CACHE_MAX = 240;
 /** ~5 trading days of regular-hours hourly bars. */
 const WEEK_HOURLY_LOOKBACK = 40;
 /** ~22 trading days of regular-hours hourly bars (downsampled to open/mid/close). */
@@ -79,6 +88,8 @@ const CONTEXT_SEED_DELAY_MS = 6_000;
 export class Hub {
   private quotes = new Map<string, Quote>();
   private bars = new Map<string, Bar[]>();
+  /** Fetched historical bars per `${symbol}:${range}`, TTL'd by RANGE_TTL_MS. */
+  private rangeCache = new Map<string, { bars: Bar[]; at: number }>();
   private funds = new Map<string, Fundamentals>();
   private avgVol = new Map<string, number>();
   private primed = new Set<string>();
@@ -379,12 +390,32 @@ export class Hub {
   async rangeBars(symbolRaw: string, range: ChartRange): Promise<Bar[]> {
     const symbol = symbolRaw.trim().toUpperCase();
     if (!symbol) return [];
-    const provider = this.router.providerFor(symbol);
+    // 1D rides the live buffer — always current, never worth caching here.
     if (range === '1D') {
       const live = this.bars.get(symbol) ?? [];
       if (live.length > 5) return live;
-      return provider.getBars(symbol, '1Min', 390);
+      return this.router.providerFor(symbol).getBars(symbol, '1Min', 390);
     }
+    // Serve a fresh cache hit without touching the (rate-limited) provider.
+    const key = `${symbol}:${range}`;
+    const hit = this.rangeCache.get(key);
+    if (hit && Date.now() - hit.at < RANGE_TTL_MS[range]) return hit.bars;
+    const bars = await this.fetchRangeBars(symbol, range);
+    if (bars.length) {
+      this.rangeCache.set(key, { bars, at: Date.now() });
+      // prune oldest entries if we've grown past the cap
+      if (this.rangeCache.size > RANGE_CACHE_MAX) {
+        const oldest = [...this.rangeCache.entries()].sort((a, b) => a[1].at - b[1].at);
+        for (let i = 0; i < oldest.length - RANGE_CACHE_MAX; i++) this.rangeCache.delete(oldest[i][0]);
+      }
+    } else if (hit) {
+      return hit.bars; // fetch came back empty (e.g. Yahoo cooldown) — serve stale
+    }
+    return bars;
+  }
+
+  private async fetchRangeBars(symbol: string, range: Exclude<ChartRange, '1D'>): Promise<Bar[]> {
+    const provider = this.router.providerFor(symbol);
     if (range === '1W') return provider.getBars(symbol, '1Hour', WEEK_HOURLY_LOOKBACK);
     if (range === '1M') {
       const hourly = await provider.getBars(symbol, '1Hour', MONTH_HOURLY_LOOKBACK);

@@ -8,6 +8,11 @@ import FactorGrid from './FactorGrid';
 import ScoreSparkline from './ScoreSparkline';
 import SetupScoreBar from './SetupScoreBar';
 
+// Session-lived cache of fetched range bars, keyed `${symbol}:${range}`.
+// Lets a revisited range paint instantly while it revalidates in the
+// background — the server has its own TTL cache behind this.
+const barCache = new Map<string, Bar[]>();
+
 export default function TickerDetail({
   symbol,
   detail,
@@ -30,6 +35,7 @@ export default function TickerDetail({
   const [note, setNote] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
   const [logging, setLogging] = useState(false);
+  const [showTrend, setShowTrend] = useState(false);
 
   const submitLog = async () => {
     if (!symbol || logging) return;
@@ -50,16 +56,28 @@ export default function TickerDetail({
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setErr(false);
-    setHist([]);
+    // Cache hit: paint immediately, revalidate quietly (no spinner, no flash).
+    const cached = barCache.get(`${symbol}:${range}`);
+    if (cached) {
+      setHist(cached);
+      setErr(false);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setErr(false);
+      setHist([]);
+    }
     api
       .getBars(symbol, range)
       .then((r) => {
-        if (!cancelled) setHist(r.bars);
+        if (cancelled) return;
+        barCache.set(`${symbol}:${range}`, r.bars);
+        setHist(r.bars);
+        setErr(false);
       })
       .catch(() => {
-        if (!cancelled) setErr(true);
+        // Keep showing cached bars if we have them; only error on a cold miss.
+        if (!cancelled && !cached) setErr(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -159,6 +177,7 @@ export default function TickerDetail({
         open={q?.open ?? null}
         prevClose={q?.prevClose ?? null}
         symbol={symbol}
+        showTrend={showTrend}
       />
 
       {detail ? (
@@ -173,6 +192,17 @@ export default function TickerDetail({
               </span>
             )}
             <span className="log-controls">
+              <button
+                className={`log-btn trend-toggle ${showTrend ? 'is-active' : ''}`}
+                onClick={() => setShowTrend((v) => !v)}
+                disabled={range === '1D'}
+                aria-pressed={showTrend}
+                title={range === '1D'
+                  ? 'Trend line is available on 1W and longer ranges'
+                  : 'Overlay a moving-average trend line'}
+              >
+                TREND{showTrend ? ' ✓' : ''}
+              </button>
               {noteOpen && (
                 <input
                   className="log-note"
